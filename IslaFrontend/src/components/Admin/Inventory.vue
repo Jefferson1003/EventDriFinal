@@ -1,4 +1,3 @@
-Inventory.vue
 <template>
   <div class="admin-container" :class="{ 'dark-mode': isDarkMode }">
     <!-- Admin Navbar -->
@@ -927,38 +926,36 @@ export default {
       }
     },
 
-    async editProduct(product) {
-      try {
-        const response = await inventoryService.getProduct(product.id);
-        
-        if (response.success) {
-          this.currentProduct = {
-            id: response.data.id,
-            name: response.data.name,
-            description: response.data.description,
-            price: parseFloat(response.data.price),
-            originalPrice: response.data.original_price ? parseFloat(response.data.original_price) : null,
-            image: response.data.image ? `http://localhost:8000/uploads/${response.data.image}` : this.getDefaultProductImage(),
-            category: response.data.category_id,
-            calories: response.data.calories || 0,
-            stock: response.data.stock,
-            inStock: Boolean(response.data.in_stock),
-            isNew: Boolean(response.data.is_new),
-            isBestseller: Boolean(response.data.is_bestseller),
-            customizable: Boolean(response.data.customizable),
-            sizes: response.data.sizes || [],
-            addons: response.data.addons || [],
-            imageFile: null
-          };
-          this.showEditProductModal = true;
-        } else {
-          this.showNotification('Failed to load product data', 'error');
-        }
-      } catch (error) {
-        console.error('Error loading product:', error);
-        this.showNotification('Error loading product data', 'error');
-      }
-    },
+   async editProduct(product) {
+  try {
+    const response = await inventoryService.getProduct(product.id);
+    
+    if (response.success) {
+      this.currentProduct = {
+        id: response.data.id,
+        name: response.data.name,
+        description: response.data.description,
+        price: parseFloat(response.data.price),
+        originalPrice: response.data.original_price ? parseFloat(response.data.original_price) : null,
+        image: response.data.image ? `http://localhost:8000/uploads/${response.data.image}` : this.getDefaultProductImage(),
+        category: response.data.category, // ✅ FIXED: changed from category_id to category
+        calories: response.data.calories || 0,
+        stock: response.data.stock,
+        inStock: Boolean(response.data.in_stock),
+        isNew: Boolean(response.data.is_new),
+        isBestseller: Boolean(response.data.is_bestseller),
+        customizable: Boolean(response.data.customizable),
+        imageFile: null
+      };
+      this.showEditProductModal = true;
+    } else {
+      this.showNotification('Failed to load product data', 'error');
+    }
+  } catch (error) {
+    console.error('Error loading product:', error);
+    this.showNotification('Error loading product data', 'error');
+  }
+},
 
     confirmDelete(product) {
       this.productToDelete = product;
@@ -991,7 +988,7 @@ export default {
    async saveProduct() {
   try {
     this.saving = true;
-    
+     
     // ✅ FIX DATA STRUCTURE TO MATCH YOUR DATABASE
     const productData = {
       name: this.currentProduct.name,
