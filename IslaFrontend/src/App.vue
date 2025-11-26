@@ -1,11 +1,6 @@
 <template>
   <div id="app">
-    <!-- Use Navbar component -->
-    <Navbar v-if="$route.path !== '/' && $route.path !== '/login'" />
-    
     <router-view />
-    
-    <UserFooter v-if="$route.path !== '/' && $route.path !== '/login'" />
   </div>
 </template>
 
@@ -16,7 +11,6 @@ export default {
 </script>
 
 <style>
-
 * {
   margin: 0;
   padding: 0;

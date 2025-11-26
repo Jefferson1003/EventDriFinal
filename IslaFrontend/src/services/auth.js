@@ -10,18 +10,17 @@ class AuthService {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      timeout: 10000, // 10 seconds timeout
+      timeout: 10000,
     });
 
     // Add request interceptor to include token
-    this.api.interceptors.request.use(
+   this.api.interceptors.request.use(
       (config) => {
         const token = this.getToken();
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
         
-        // Log request for debugging
         console.log(`🚀 ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
         
         return config;
@@ -31,6 +30,7 @@ class AuthService {
         return Promise.reject(error);
       }
     );
+
 
     // Add response interceptor to handle errors
     this.api.interceptors.response.use(
@@ -46,7 +46,7 @@ class AuthService {
         });
         
         if (error.response?.status === 401) {
-          console.log('🛡️  Unauthorized - Logging out user');
+          console.log('🛡️ Unauthorized - Logging out user');
           this.logout();
           
           // Redirect to login if we're not already there
@@ -213,19 +213,19 @@ class AuthService {
   }
 
   // Utility methods
-  setToken(token) {
-    localStorage.setItem('token', token);
-    console.log('💾 Token stored in localStorage');
-  }
+ setToken(token) {
+  localStorage.setItem('access_token', token); // Change from 'token' to 'access_token'
+  console.log('💾 Token stored in localStorage');
+}
 
   setUser(user) {
     localStorage.setItem('user', JSON.stringify(user));
     console.log('💾 User data stored in localStorage');
   }
 
-  getToken() {
-    return localStorage.getItem('token');
-  }
+ getToken() {
+  return localStorage.getItem('access_token'); // Change from 'token' to 'access_token'
+}
 
   getUser() {
     const user = localStorage.getItem('user');
@@ -238,11 +238,11 @@ class AuthService {
   }
 
   clearAuthData() {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('refresh_token');
-    console.log('🧹 All auth data cleared from localStorage');
-  }
+  localStorage.removeItem('access_token'); // Change from 'token' to 'access_token'
+  localStorage.removeItem('user');
+  localStorage.removeItem('refresh_token');
+  console.log('🧹 All auth data cleared from localStorage');
+}
 
   isAuthenticated() {
     const token = this.getToken();
@@ -316,9 +316,23 @@ class AuthService {
   }
 
   // Optional: Method to check if user is admin
-  isAdmin() {
-    return this.hasRole('admin');
-  }
+ isAdmin() {
+  const user = this.getUser();
+  return user?.role?.toLowerCase() === 'admin';
+}
+
+isUser() {
+  const user = this.getUser();
+  const role = user?.role?.toLowerCase();
+  return role === 'user' || !role; // Default to user if no role
+}
+getRedirectPath() {
+  const user = this.getUser();
+  if (!user) return '/login';
+  
+  const role = user.role?.toLowerCase();
+  return role === 'admin' ? '/admin/dashboard' : '/user/account';
+}
 }
 
 // Create and export singleton instance

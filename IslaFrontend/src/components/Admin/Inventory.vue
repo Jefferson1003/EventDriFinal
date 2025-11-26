@@ -1,3 +1,4 @@
+Inventory.vue
 <template>
   <div class="admin-container" :class="{ 'dark-mode': isDarkMode }">
     <!-- Admin Navbar -->
@@ -154,14 +155,8 @@
       <main class="admin-content">
         <!-- Inventory Content -->
         <div class="admin-inventory">
-          <!-- Loading State -->
-          <div v-if="loading" class="loading-state">
-            <div class="loading-spinner"></div>
-            <p>Loading inventory...</p>
-          </div>
-
           <!-- Page Header -->
-          <div class="inventory-header" v-if="!loading">
+          <div class="inventory-header">
             <h1 class="page-title">Inventory Management</h1>
             <p class="page-subtitle">Manage product stock, categories, and pricing</p>
             
@@ -181,13 +176,13 @@
           </div>
 
           <!-- Inventory Stats -->
-          <div class="inventory-stats" v-if="!loading">
+          <div class="inventory-stats">
             <div class="stat-card">
               <div class="stat-icon total">
                 <i class="fas fa-boxes"></i>
               </div>
               <div class="stat-info">
-                <h3>{{ totalProducts }}</h3>
+                <h3>{{ stats.total_products || 0 }}</h3>
                 <p>Total Products</p>
               </div>
             </div>
@@ -197,7 +192,7 @@
                 <i class="fas fa-check-circle"></i>
               </div>
               <div class="stat-info">
-                <h3>{{ inStockProducts }}</h3>
+                <h3>{{ stats.in_stock_products || 0 }}</h3>
                 <p>In Stock</p>
               </div>
             </div>
@@ -207,7 +202,7 @@
                 <i class="fas fa-exclamation-triangle"></i>
               </div>
               <div class="stat-info">
-                <h3>{{ lowStockProducts }}</h3>
+                <h3>{{ stats.low_stock_products || 0 }}</h3>
                 <p>Low Stock</p>
               </div>
             </div>
@@ -217,21 +212,21 @@
                 <i class="fas fa-times-circle"></i>
               </div>
               <div class="stat-info">
-                <h3>{{ outOfStockProducts }}</h3>
+                <h3>{{ stats.out_of_stock_products || 0 }}</h3>
                 <p>Out of Stock</p>
               </div>
             </div>
           </div>
 
           <!-- Search and Filters -->
-          <div class="inventory-controls" v-if="!loading">
+          <div class="inventory-controls">
             <div class="search-box">
               <i class="fas fa-search"></i>
               <input 
                 type="text" 
                 placeholder="Search products..." 
                 v-model="searchQuery"
-                @input="handleSearch"
+                @input="debouncedFilterProducts"
               >
             </div>
             
@@ -252,8 +247,14 @@
             </div>
           </div>
 
+          <!-- Loading State -->
+          <div v-if="loading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>Loading inventory...</p>
+          </div>
+
           <!-- Inventory Table -->
-          <div class="inventory-table-container" v-if="!loading">
+          <div v-else class="inventory-table-container">
             <table class="inventory-table">
               <thead>
                 <tr>
@@ -269,12 +270,7 @@
                 <tr v-for="product in filteredProducts" :key="product.id" :class="getStockStatusClass(product)">
                   <td class="product-cell">
                     <div class="product-info">
-                      <img 
-                        :src="getProductImage(product.image)" 
-                        :alt="product.name" 
-                        class="product-thumb" 
-                        @error="handleProductImageError"
-                      >
+                      <img :src="product.image" :alt="product.name" class="product-thumb" @error="handleProductImageError">
                       <div class="product-details">
                         <h4>{{ product.name }}</h4>
                         <p class="product-description">{{ product.description }}</p>
@@ -282,20 +278,20 @@
                     </div>
                   </td>
                   <td class="category-cell">
-                    <span class="category-tag">{{ getCategoryName(product.category_id) }}</span>
+                    <span class="category-tag">{{ getCategoryName(product.category) }}</span>
                   </td>
                   <td class="price-cell">
                     <div class="price-info">
                       <span class="current-price">₱{{ product.price }}</span>
-                      <span v-if="product.original_price" class="original-price">
-                        ₱{{ product.original_price }}
+                      <span v-if="product.originalPrice" class="original-price">
+                        ₱{{ product.originalPrice }}
                       </span>
                     </div>
                   </td>
                   <td class="stock-cell">
                     <div class="stock-info">
                       <span class="stock-quantity">{{ product.stock }}</span>
-                      <div class="stock-warning" v-if="product.stock <= 5 && product.stock > 0 && product.in_stock">
+                      <div class="stock-warning" v-if="product.stock <= 5 && product.stock > 0">
                         Low stock!
                       </div>
                     </div>
@@ -316,9 +312,9 @@
                       <button 
                         class="btn-icon toggle" 
                         @click="toggleProductStatus(product)"
-                        :title="product.in_stock ? 'Disable' : 'Enable'"
+                        :title="product.inStock ? 'Disable' : 'Enable'"
                       >
-                        <i :class="product.in_stock ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                        <i :class="product.inStock ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
                       </button>
                     </div>
                   </td>
@@ -360,12 +356,12 @@
                       >
                     </div>
                     
-                    <div class="form-group">
-                      <label>Category *</label>
-                      <select v-model="currentProduct.category_id" required>
-                        <option value="">Select Category</option>
-                        <option v-for="category in categories" :key="category.id" :value="category.id">
-                          {{ category.name }}
+                   <div class="form-group">
+  <label>Category *</label>
+  <select v-model="currentProduct.category" required>
+    <option value="">Select Category</option>
+    <option v-for="category in categories" :key="category.id" :value="category.id">
+      {{ category.name }}
                         </option>
                       </select>
                     </div>
@@ -397,7 +393,7 @@
                       <label>Original Price (₱)</label>
                       <input 
                         type="number" 
-                        v-model.number="currentProduct.original_price" 
+                        v-model.number="currentProduct.originalPrice" 
                         min="0" 
                         step="0.01"
                         placeholder="0.00"
@@ -444,12 +440,8 @@
                         >
                           <i class="fas fa-upload"></i> Choose Image
                         </button>
-                        <div v-if="currentProduct.image || currentProduct.imageFile" class="image-preview">
-                          <img 
-                            :src="currentProduct.imageFile ? URL.createObjectURL(currentProduct.imageFile) : getProductImage(currentProduct.image)" 
-                            alt="Product preview" 
-                            class="preview-image"
-                          >
+                        <div v-if="currentProduct.image" class="image-preview">
+                          <img :src="currentProduct.image" alt="Product preview" class="preview-image">
                           <button type="button" class="remove-image-btn" @click="removeImage">
                             <i class="fas fa-times"></i>
                           </button>
@@ -460,22 +452,22 @@
 
                   <div class="form-group">
                     <label class="checkbox-label">
-                      <input type="checkbox" v-model="currentProduct.in_stock"> 
+                      <input type="checkbox" v-model="currentProduct.inStock"> 
                       Product is available for sale
                     </label>
                   </div>
 
                   <div class="form-group">
                     <label class="checkbox-label">
-                      <input type="checkbox" v-model="currentProduct.is_new"> 
-                      Mark as New Product
+                      <input type="checkbox" v-model="currentProduct.isBestseller"> 
+                      Mark as Bestseller
                     </label>
                   </div>
 
                   <div class="form-group">
                     <label class="checkbox-label">
-                      <input type="checkbox" v-model="currentProduct.is_bestseller"> 
-                      Mark as Bestseller
+                      <input type="checkbox" v-model="currentProduct.isNew"> 
+                      Mark as New Product
                     </label>
                   </div>
 
@@ -498,7 +490,6 @@
                           v-model="size.name" 
                           placeholder="Size name"
                           class="size-name"
-                          required
                         >
                         <input 
                           type="number" 
@@ -507,7 +498,6 @@
                           min="0"
                           step="0.01"
                           class="size-price"
-                          required
                         >
                         <button 
                           type="button" 
@@ -531,7 +521,6 @@
                           v-model="addon.name" 
                           placeholder="Add-on name"
                           class="addon-name"
-                          required
                         >
                         <input 
                           type="number" 
@@ -540,7 +529,6 @@
                           min="0"
                           step="0.01"
                           class="addon-price"
-                          required
                         >
                         <button 
                           type="button" 
@@ -557,12 +545,11 @@
                   </div>
 
                   <div class="form-actions">
-                    <button type="button" @click="closeModal" class="btn secondary" :disabled="saving">
+                    <button type="button" @click="closeModal" class="btn secondary">
                       Cancel
                     </button>
                     <button type="submit" class="btn primary" :disabled="saving">
-                      <span v-if="saving">Saving...</span>
-                      <span v-else>{{ showEditProductModal ? 'Update Product' : 'Add Product' }}</span>
+                      {{ saving ? 'Saving...' : (showEditProductModal ? 'Update Product' : 'Add Product') }}
                     </button>
                   </div>
                 </form>
@@ -579,10 +566,9 @@
               <div class="modal-body">
                 <p>Are you sure you want to delete "{{ productToDelete?.name }}"? This action cannot be undone.</p>
                 <div class="modal-actions">
-                  <button @click="closeModal" class="btn secondary" :disabled="deleting">Cancel</button>
+                  <button @click="closeModal" class="btn secondary">Cancel</button>
                   <button @click="deleteProduct" class="btn danger" :disabled="deleting">
-                    <span v-if="deleting">Deleting...</span>
-                    <span v-else>Delete</span>
+                    {{ deleting ? 'Deleting...' : 'Delete' }}
                   </button>
                 </div>
               </div>
@@ -595,184 +581,7 @@
 </template>
 
 <script>
-// Direct API calls without external service
-const API_BASE_URL = 'http://localhost:8000'; // Adjust to your LavaLust backend URL
-
-// Simple API service directly in the component
-const inventoryService = {
-    async apiCall(url, options = {}) {
-        const token = localStorage.getItem('islaAccessToken');
-        const headers = {
-            'Content-Type': 'application/json',
-            ...options.headers,
-        };
-
-        if (token) {
-            headers.Authorization = `Bearer ${token}`;
-        }
-
-        try {
-            const response = await fetch(`${API_BASE_URL}${url}`, {
-                headers,
-                ...options,
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('API call failed:', error);
-            throw error;
-        }
-    },
-
-    // Get all products with filters
-    async getInventory(params = {}) {
-        try {
-            const queryString = new URLSearchParams(params).toString();
-            const url = `/api/admin/inventory${queryString ? `?${queryString}` : ''}`;
-            return await this.apiCall(url);
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Get product by ID
-    async getProduct(id) {
-        try {
-            return await this.apiCall(`/api/admin/inventory/${id}`);
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Create product
-    async createProduct(productData) {
-        try {
-            // For FormData, we need to handle differently
-            const token = localStorage.getItem('islaAccessToken');
-            const formData = new FormData();
-            
-            // Append all fields to FormData
-            Object.keys(productData).forEach(key => {
-                if (key === 'sizes' || key === 'addons') {
-                    formData.append(key, JSON.stringify(productData[key]));
-                } else if (key !== 'imageFile') {
-                    formData.append(key, productData[key]);
-                }
-            });
-            
-            // Append image file if exists
-            if (productData.imageFile) {
-                formData.append('image', productData.imageFile);
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/admin/inventory`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: formData,
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Update product
-    async updateProduct(id, productData) {
-        try {
-            const token = localStorage.getItem('islaAccessToken');
-            const formData = new FormData();
-            
-            // Append all fields to FormData
-            Object.keys(productData).forEach(key => {
-                if (key === 'sizes' || key === 'addons') {
-                    formData.append(key, JSON.stringify(productData[key]));
-                } else if (key !== 'imageFile') {
-                    formData.append(key, productData[key]);
-                }
-            });
-            
-            // Append image file if exists
-            if (productData.imageFile) {
-                formData.append('image', productData.imageFile);
-            }
-
-            const response = await fetch(`${API_BASE_URL}/api/admin/inventory/${id}`, {
-                method: 'POST', // LavaLust uses POST for updates with _method
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: formData,
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Delete product
-    async deleteProduct(id) {
-        try {
-            return await this.apiCall(`/api/admin/inventory/${id}`, {
-                method: 'DELETE',
-            });
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Toggle product status
-    async toggleProductStatus(id) {
-        try {
-            return await this.apiCall(`/api/admin/inventory/${id}/toggle-status`, {
-                method: 'POST',
-            });
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Export to CSV
-    async exportCSV() {
-        try {
-            return await this.apiCall('/api/admin/inventory/export/csv');
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Get categories
-    async getCategories() {
-        try {
-            return await this.apiCall('/api/admin/categories');
-        } catch (error) {
-            throw this.handleError(error);
-        }
-    },
-
-    // Error handler
-    handleError(error) {
-        return {
-            success: false,
-            message: error.message || 'Network error or server unavailable'
-        };
-    }
-};
+import { inventoryService } from '../../services/inventory';
 
 export default {
   name: 'AdminInventory',
@@ -790,166 +599,62 @@ export default {
       notifications: [],
 
       // Inventory Data
-      loading: false,
-      saving: false,
-      deleting: false,
       searchQuery: '',
-      selectedCategory: 'all',
-      stockFilter: 'all',
-      showLowStock: false,
-      showAddProductModal: false,
-      showEditProductModal: false,
-      showDeleteModal: false,
-      productToDelete: null,
-      currentProduct: this.getEmptyProduct(),
-      categories: [
-        {
-          id: 'coffee-based',
-          name: 'Coffee-Based',
-          icon: 'fas fa-coffee',
-          description: 'Rich and aromatic coffee creations'
-        },
-        {
-          id: 'blended-frappe',
-          name: 'Blended/Frappe',
-          icon: 'fas fa-blender',
-          description: 'Icy blended coffee delights'
-        },
-        {
-          id: 'non-coffee',
-          name: 'Non-Coffee',
-          icon: 'fas fa-mug-hot',
-          description: 'Refreshing beverages without coffee'
-        },
-        {
-          id: 'cold-brew-specialty',
-          name: 'Cold Brew & Specialty',
-          icon: 'fas fa-glass-whiskey',
-          description: 'Specialty cold brews and unique drinks'
-        },
-        {
-          id: 'bottled-canned',
-          name: 'Bottled/Canned Drinks',
-          icon: 'fas fa-wine-bottle',
-          description: 'Grab-and-go bottled beverages'
-        },
-        {
-          id: 'pasta-sandwiches',
-          name: 'Pasta & Sandwiches',
-          icon: 'fas fa-utensils',
-          description: 'Hearty pasta dishes and sandwiches'
-        },
-        {
-          id: 'cake-slices',
-          name: 'Cake Slices',
-          icon: 'fas fa-birthday-cake',
-          description: 'Delicious cake slices for every taste'
-        },
-        {
-          id: 'cookies',
-          name: 'Cookies',
-          icon: 'fas fa-cookie',
-          description: 'Freshly baked cookies'
-        },
-        {
-          id: 'brownies',
-          name: 'Brownies',
-          icon: 'fas fa-cookie-bite',
-          description: 'Rich and fudgy brownies'
-        },
-        {
-          id: 'muffins',
-          name: 'Muffins',
-          icon: 'fas fa-bread-slice',
-          description: 'Moist and flavorful muffins'
-        },
-        {
-          id: 'savory-pastry',
-          name: 'Savory Pastry',
-          icon: 'fas fa-cheese',
-          description: 'Savory pastries and baked goods'
-        }
-      ],
-      products: [],
-      stats: {
-        total_products: 0,
-        in_stock_products: 0,
-        low_stock_products: 0,
-        out_of_stock_products: 0
-      }
-    }
-  },
+    selectedCategory: 'all',
+    stockFilter: 'all',
+    showLowStock: false,
+    showAddProductModal: false,
+    showEditProductModal: false,
+    showDeleteModal: false,
+    productToDelete: null,
+    currentProduct: this.getEmptyProduct(),
+    categories: [
+      { id: 'coffee-based', name: 'Coffee-Based' },
+      { id: 'blended-frappe', name: 'Blended/Frappe' },
+      { id: 'non-coffee', name: 'Non-Coffee' },
+      { id: 'cold-brew-specialty', name: 'Cold Brew & Specialty' },
+      { id: 'bottled-canned', name: 'Bottled/Canned Drinks' },
+      { id: 'pasta-sandwiches', name: 'Pasta & Sandwiches' },
+      { id: 'cake-slices', name: 'Cake Slices' },
+      { id: 'cookies', name: 'Cookies' },
+      { id: 'brownies', name: 'Brownies' },
+      { id: 'muffins', name: 'Muffins' },
+      { id: 'savory-pastry', name: 'Savory Pastry' }
+    ],
+    products: [],
+    stats: {},
+    loading: false,
+    saving: false,
+    deleting: false,
+    debounceTimer: null
+  }
+},
   computed: {
     notificationCount() {
       return this.notifications.length
     },
     filteredProducts() {
-      let filtered = this.products;
-
-      // Search filter
-      if (this.searchQuery) {
-        filtered = filtered.filter(product =>
-          product.name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
-          (product.description && product.description.toLowerCase().includes(this.searchQuery.toLowerCase()))
-        );
-      }
-
-      // Category filter
-      if (this.selectedCategory !== 'all') {
-        filtered = filtered.filter(product => product.category_id === this.selectedCategory);
-      }
-
-      // Stock filter
-      if (this.stockFilter !== 'all') {
-        switch (this.stockFilter) {
-          case 'in-stock':
-            filtered = filtered.filter(product => product.in_stock && product.stock > 5);
-            break;
-          case 'low-stock':
-            filtered = filtered.filter(product => product.in_stock && product.stock > 0 && product.stock <= 5);
-            break;
-          case 'out-of-stock':
-            filtered = filtered.filter(product => !product.in_stock || product.stock === 0);
-            break;
-        }
-      }
-
-      // Low stock alert filter
-      if (this.showLowStock) {
-        filtered = filtered.filter(product => product.in_stock && product.stock > 0 && product.stock <= 5);
-      }
-
-      return filtered;
-    },
-    totalProducts() {
-      return this.stats.total_products;
-    },
-    inStockProducts() {
-      return this.stats.in_stock_products;
-    },
-    lowStockProducts() {
-      return this.stats.low_stock_products;
-    },
-    outOfStockProducts() {
-      return this.stats.out_of_stock_products;
+      return this.products; // Now handled by API filtering
     },
     showCustomizationOptions() {
       const customizableCategories = ['coffee-based', 'blended-frappe', 'non-coffee', 'cold-brew-specialty'];
-      return !this.currentProduct.category_id || customizableCategories.includes(this.currentProduct.category_id);
+      return !this.currentProduct.category || customizableCategories.includes(this.currentProduct.category);
     }
   },
-  async mounted() {
-    // Check for saved dark mode preference
-    const savedDarkMode = localStorage.getItem('islaDarkMode');
-    if (savedDarkMode) {
-      this.isDarkMode = JSON.parse(savedDarkMode);
-      this.applyDarkModeStyles();
-    }
+ async mounted() {
+  // ✅ ADD AUTHENTICATION CHECK FIRST
+  const token = localStorage.getItem('access_token');
+  if (!token) {
+    console.log('❌ No token found, redirecting to login');
+    this.$router.push('/login');
+    return;
+  }
+   console.log('🔐 Token found:', token.substring(0, 20) + '...');
 
     // Load admin data
     await this.loadAdminData();
-    await this.loadCategories();
     await this.loadInventoryData();
+    await this.loadCategories();
 
     // Add Font Awesome if not already loaded
     this.loadFontAwesome();
@@ -960,6 +665,9 @@ export default {
   beforeUnmount() {
     // Remove event listener when component is destroyed
     document.removeEventListener('click', this.handleClickOutside);
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
   },
   methods: {
     // Load admin data from localStorage or API
@@ -978,47 +686,60 @@ export default {
       }
     },
 
-    // Load inventory data
-    async loadInventoryData() {
-      try {
-        this.loading = true;
-        const response = await inventoryService.getInventory({
-          search: this.searchQuery,
-          category: this.selectedCategory !== 'all' ? this.selectedCategory : undefined,
-          stock_filter: this.stockFilter !== 'all' ? this.stockFilter : undefined,
-          show_low_stock: this.showLowStock ? 'true' : undefined
-        });
-
-        if (response.success) {
-          this.products = response.data;
-          this.stats = response.stats;
-        } else {
-          this.showNotification(response.message || 'Failed to load inventory', 'error');
-        }
-      } catch (error) {
-        console.error('Error loading inventory data:', error);
-        this.showNotification(error.message || 'Failed to load inventory data', 'error');
-        this.products = [];
-      } finally {
-        this.loading = false;
-      }
-    },
+    // Load inventory data from API
+  async loadInventoryData() {
+  try {
+    this.loading = true;
+    const params = {
+      search: this.searchQuery,
+      category: this.selectedCategory !== 'all' ? this.selectedCategory : '',
+      stock_filter: this.stockFilter !== 'all' ? this.stockFilter : '',
+      show_low_stock: this.showLowStock
+    };
+    
+    const response = await inventoryService.getInventory(params);
+    
+    if (response.success) {
+      this.products = response.data.map(product => ({
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: parseFloat(product.price),
+        originalPrice: product.original_price ? parseFloat(product.original_price) : null,
+        image: product.image ? `http://localhost:8000/uploads/${product.image}` : this.getDefaultProductImage(),
+        category: product.category, // This is now the enum value
+        calories: product.calories || 0,
+        stock: product.stock,
+        inStock: Boolean(product.in_stock),
+        isNew: Boolean(product.is_new),
+        isBestseller: Boolean(product.is_bestseller),
+        customizable: Boolean(product.customizable)
+      }));
+      
+      this.stats = response.stats || {};
+    } else {
+      this.showNotification('Failed to load inventory', 'error');
+    }
+  } catch (error) {
+    console.error('Error loading inventory:', error);
+    this.showNotification('Error loading inventory data', 'error');
+  } finally {
+    this.loading = false;
+  }
+},
 
     // Load categories from API
     async loadCategories() {
       try {
         const response = await inventoryService.getCategories();
         if (response.success) {
-          // Use API categories if available, otherwise use default ones
-          this.categories = response.data.length > 0 ? response.data : this.categories;
+          this.categories = response.data;
         } else {
-          // If API fails, use the default categories defined in data()
-          this.showNotification('Using default categories', 'info');
+          this.showNotification('Failed to load categories', 'error');
         }
       } catch (error) {
         console.error('Error loading categories:', error);
-        // Use default categories if API fails
-        this.showNotification('Using default categories', 'info');
+        this.showNotification('Error loading categories', 'error');
       }
     },
 
@@ -1027,7 +748,7 @@ export default {
       this.admin = {
         name: 'Admin User',
         email: 'admin@islacafe.com',
-        avatar: '/images/admin-avatar.png'
+        avatar: this.getDefaultAvatar()
       };
     },
 
@@ -1076,40 +797,41 @@ export default {
 
     // Image error handling
     handleImageError(event) {
-      event.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjYwIiBoZWlnaHQ0IjYwIiBmaWxsPSIjRjVGNUY1Ii8+CjxwYXRoIGQ9Ik0zMCAzNEMzMy4zMTM3IDM0IDM2IDMxLjMxMzcgMzYgMjhDMzYgMjQuNjg2MyAzMy4zMTM3IDIyIDMwIDIyQzI2LjY4NjMgMjIgMjQgMjQuNjg2MyAyNCAyOEMyNCAzMS4zMTM3IDI2LjY4NjMgMzQgMzAgMzRaIiBmaWxsPSIjODg1OTJFIi8+CjxwYXRoIGQ9Ik0zOCAzOEgyMkMyMC44OTU0IDM4IDIwIDM3LjEwNDYgMjAgMzZWMjJDMjAgMjAuODk1NCAyMC44OTU0IDIwIDIyIDIwSDM4QzM5LjEwNDYgMjAgNDAgMjAuODk1NCA0MCAyMlYzNkM0MCAzNy4xMDQ2IDM5LjEwNDYgMzggMzggMzhaTTIyIDIyVjM2SDM4VjIySDIyWiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
+      event.target.src = this.getDefaultLogo();
     },
     
     handleAvatarError(event) {
-      event.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMzAiIGZpbGw9IiNGNUY1RjUiLz4KPGNpcmNsZSBjeD0iMzAiIGN5PSIyNCIgcj0iOCIgZmlsbD0iIzg4NTkyRSIvPgo8cGF0aCBkPSJNMTggNDhDMjEuMzEzNyA0OCAyNCA0NS4zMTM3IDI0IDQyQzI0IDM4LjY4NjMgMjEuMzEzNyAzNiAxOCAzNkMxNC42ODYzIDM2IDEyIDM4LjY4NjMgMTIgNDJDMTIgNDUuMzEzNyAxNC42ODYzIDQ4IDE4IDQ4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
+      event.target.src = this.getDefaultAvatar();
     },
 
     handleProductImageError(event) {
-      event.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjRjVGNUY1Ii8+CjxwYXRoIGQ9Ik0yNSAzMEMyOC4zMTM3IDMwIDMxIDI3LjMxMzcgMzEgMjRDMzEgMjAuNjg2MyAyOC4zMTM3IDE4IDI1IDE4QzIxLjY4NjMgMTggMTkgMjAuNjg2MyAxOSAyNEMxOSAyNy4zMTM3IDIxLjY4NjMgMzAgMjUgMzBaIiBmaWxsPSIjODg1OTJFIi8+CjxwYXRoIGQ9Ik0zMiAzNEgxOEMxNi44OTU0IDM0IDE2IDMzLjEwNDYgMTYgMzJWMTlDMTYgMTcuODk1NCAxNi44OTU0IDE3IDE4IDE3SDMyQzMzLjEwNDYgMTcgMzQgMTcuODk1NCAzNCAxOVYzMkMzNCAzMy4xMDQ2IDMzLjEwNDYgMzQgMzIgMzRaTTE4IDE5VjMySDMyVjE5SDE4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
+      event.target.src = this.getDefaultProductImage();
     },
 
-    getProductImage(imagePath) {
-      if (!imagePath) {
-        return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjRjVGNUY1Ii8+CjxwYXRoIGQ9Ik0yNSAzMEMyOC4zMTM3IDMwIDMxIDI3LjMxMzcgMzEgMjRDMzEgMjAuNjg2MyAyOC4zMTM3IDE4IDI1IDE4QzIxLjY4NjMgMTggMTkgMjAuNjg2MyAxOSAyNEMxOSAyNy4zMTM3IDIxLjY4NjMgMzAgMjUgMzBaIiBmaWxsPSIjODg1OTJFIi8+CjxwYXRoIGQ9Ik0zMiAzNEgxOEMxNi44OTU0IDM0IDE2IDMzLjEwNDYgMTYgMzJWMTlDMTYgMTcuODk1NCAxNi44OTU0IDE3IDE4IDE3SDMyQzMzLjEwNDYgMTcgMzQgMTcuODk1NCAzNCAxOVYzMkMzNCAzMy4xMDQ2IDMzLjEwNDYgMzQgMzIgMzRaTTE4IDE5VjMySDMyVjE5SDE4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
-      }
-      // If it's a full URL, return as is, otherwise construct the path
-      if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
-        return imagePath;
-      }
-      return `/uploads/${imagePath}`;
+    getDefaultLogo() {
+      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjYwIiBoZWlnaHQ9IjYwIiBmaWxsPSIjRjVGNUY1Ii8+CjxwYXRoIGQ9Ik0zMCAzNEMzMy4zMTM3IDM0IDM2IDMxLjMxMzcgMzYgMjhDMzYgMjQuNjg2MyAzMy4zMTM3IDIyIDMwIDIyQzI2LjY4NjMgMjIgMjQgMjQuNjg2MyAyNCAyOEMyNCAzMS4zMTM3IDI2LjY4NjMgMzQgMzAgMzRaIiBmaWxsPSIjODg1OTJFIi8+CjxwYXRoIGQ9Ik0zOCAzOEgyMkMyMC44OTU0IDM4IDIwIDM3LjEwNDYgMjAgMzZWMjJDMjAgMjAuODk1NCAyMC44OTU0IDIwIDIyIDIwSDM4QzM5LjEwNDYgMjAgNDAgMjAuODk1NCA0MCAyMlYzNkM0MCAzNy4xMDQ2IDM5LjEwNDYgMzggMzggMzhaTTIyIDIyVjM2SDM4VjIySDIyWiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
+    },
+
+    getDefaultAvatar() {
+      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMzAiIGZpbGw9IiNGNUY1RjUiLz4KPGNpcmNsZSBjeD0iMzAiIGN5PSIyNCIgcj0iOCIgZmlsbD0iIzg4NTkyRSIvPgo8cGF0aCBkPSJNMTggNDhDMjEuMzEzNyA0OCAyNCA0NS4zMTM3IDI0IDQyQzI0IDM4LjY4NjMgMjEuMzEzNyAzNiAxOCAzNkMxNC42ODYzIDM2IDEyIDM4LjY4NjMgMTIgNDJDMTIgNDUuMzEzNyAxNC42ODYzIDQ4IDE4IDQ4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
+    },
+
+    getDefaultProductImage() {
+      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjRjVGNUY1Ii8+CjxwYXRoIGQ9Ik0yNSAzMEMyOC4zMTM3IDMwIDMxIDI3LjMxMzcgMzEgMjRDMzEgMjAuNjg2MyAyOC4zMTM3IDE4IDI1IDE4QzIxLjY4NjMgMTggMTkgMjAuNjg2MyAxOSAyNEMxOSAyNy4zMTM3IDIxLjY4NjMgMzAgMjUgMzBaIiBmaWxsPSIjODg1OTJFIi8+CjxwYXRoIGQ9Ik0zMiAzNEgxOEMxNi44OTU0IDM0IDE2IDMzLjEwNDYgMTYgMzJWMTlDMTYgMTcuODk1NCAxNi44OTU0IDE3IDE4IDE3SDMyQzMzLjEwNDYgMTcgMzQgMTcuODk1NCAzNCAxOVYzMkMzNCAzMy4xMDQ2IDMzLjEwNDYgMzQgMzIgMzRaTTE4IDE5VjMySDMyVjE5SDE4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
     },
 
     // User methods
     async handleLogout() {
       try {
         localStorage.removeItem('islaAdmin');
-        localStorage.removeItem('islaAccessToken');
-        localStorage.removeItem('islaRefreshToken');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         this.$router.push('/login');
       } catch (error) {
         console.error('Logout error:', error);
         localStorage.removeItem('islaAdmin');
-        localStorage.removeItem('islaAccessToken');
-        localStorage.removeItem('islaRefreshToken');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         this.$router.push('/login');
       }
     },
@@ -1139,21 +861,22 @@ export default {
     },
 
     // Inventory Methods
-    handleSearch() {
-      // Debounce search
-      clearTimeout(this.searchTimeout);
-      this.searchTimeout = setTimeout(() => {
-        this.loadInventoryData();
+    debouncedFilterProducts() {
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer);
+      }
+      this.debounceTimer = setTimeout(() => {
+        this.filterProducts();
       }, 500);
     },
 
-    filterProducts() {
-      this.loadInventoryData();
+    async filterProducts() {
+      await this.loadInventoryData();
     },
 
     toggleLowStockFilter() {
       this.showLowStock = !this.showLowStock;
-      this.loadInventoryData();
+      this.filterProducts();
     },
 
     clearFilters() {
@@ -1170,13 +893,13 @@ export default {
     },
 
     getStockStatus(product) {
-      if (!product.in_stock || product.stock === 0) return 'out-of-stock';
+      if (!product.inStock || product.stock === 0) return 'out-of-stock';
       if (product.stock <= 5) return 'low-stock';
       return 'in-stock';
     },
 
     getStockStatusText(product) {
-      if (!product.in_stock || product.stock === 0) return 'Out of Stock';
+      if (!product.inStock || product.stock === 0) return 'Out of Stock';
       if (product.stock <= 5) return 'Low Stock';
       return 'In Stock';
     },
@@ -1191,26 +914,50 @@ export default {
         
         if (response.success) {
           this.showNotification(response.message, 'success');
-          // Update local product status
-          product.in_stock = response.data.in_stock;
+          // Update local state
+          product.inStock = response.data.in_stock;
+          // Reload stats
           await this.loadInventoryData();
         } else {
           this.showNotification(response.message || 'Failed to update status', 'error');
         }
       } catch (error) {
         console.error('Error toggling product status:', error);
-        this.showNotification(error.message || 'Failed to update product status', 'error');
+        this.showNotification(error.message || 'Error updating product status', 'error');
       }
     },
 
-    editProduct(product) {
-      this.currentProduct = {
-        ...product,
-        category_id: product.category_id,
-        sizes: product.sizes || [{ name: 'Regular', price: 0 }],
-        addons: product.addons || []
-      };
-      this.showEditProductModal = true;
+    async editProduct(product) {
+      try {
+        const response = await inventoryService.getProduct(product.id);
+        
+        if (response.success) {
+          this.currentProduct = {
+            id: response.data.id,
+            name: response.data.name,
+            description: response.data.description,
+            price: parseFloat(response.data.price),
+            originalPrice: response.data.original_price ? parseFloat(response.data.original_price) : null,
+            image: response.data.image ? `http://localhost:8000/uploads/${response.data.image}` : this.getDefaultProductImage(),
+            category: response.data.category_id,
+            calories: response.data.calories || 0,
+            stock: response.data.stock,
+            inStock: Boolean(response.data.in_stock),
+            isNew: Boolean(response.data.is_new),
+            isBestseller: Boolean(response.data.is_bestseller),
+            customizable: Boolean(response.data.customizable),
+            sizes: response.data.sizes || [],
+            addons: response.data.addons || [],
+            imageFile: null
+          };
+          this.showEditProductModal = true;
+        } else {
+          this.showNotification('Failed to load product data', 'error');
+        }
+      } catch (error) {
+        console.error('Error loading product:', error);
+        this.showNotification('Error loading product data', 'error');
+      }
     },
 
     confirmDelete(product) {
@@ -1221,34 +968,55 @@ export default {
     async deleteProduct() {
       try {
         this.deleting = true;
-        const response = await inventoryService.deleteProduct(this.productToDelete.id);
-        
-        if (response.success) {
-          this.showNotification(response.message, 'success');
-          await this.loadInventoryData();
-          this.closeModal();
-        } else {
-          this.showNotification(response.message || 'Failed to delete product', 'error');
+        if (this.productToDelete) {
+          const response = await inventoryService.deleteProduct(this.productToDelete.id);
+          
+          if (response.success) {
+            this.showNotification(response.message, 'success');
+            await this.loadInventoryData();
+          } else {
+            this.showNotification(response.message || 'Failed to delete product', 'error');
+          }
         }
+        this.closeModal();
       } catch (error) {
         console.error('Error deleting product:', error);
-        this.showNotification(error.message || 'Failed to delete product', 'error');
+        this.showNotification(error.message || 'Error deleting product', 'error');
+        this.closeModal();
       } finally {
         this.deleting = false;
       }
     },
 
-    async saveProduct() {
-      try {
-        this.saving = true;
-        
+   async saveProduct() {
+  try {
+    this.saving = true;
+    
+    // ✅ FIX DATA STRUCTURE TO MATCH YOUR DATABASE
+    const productData = {
+      name: this.currentProduct.name,
+      description: this.currentProduct.description,
+      price: this.currentProduct.price,
+      original_price: this.currentProduct.originalPrice || null,
+      category: this.currentProduct.category, // ✅ Change from category_id to category
+      calories: this.currentProduct.calories,
+      stock: this.currentProduct.stock,
+      in_stock: this.currentProduct.inStock ? 1 : 0,
+      is_new: this.currentProduct.isNew ? 1 : 0,
+      is_bestseller: this.currentProduct.isBestseller ? 1 : 0,
+      customizable: this.currentProduct.customizable ? 1 : 0
+      // ✅ Remove sizes and addons since your database doesn't have them
+    };
         let response;
-        if (this.showEditProductModal) {
-          response = await inventoryService.updateProduct(this.currentProduct.id, this.currentProduct);
-        } else {
-          response = await inventoryService.createProduct(this.currentProduct);
-        }
         
+        if (this.showEditProductModal) {
+          // Update existing product
+          response = await inventoryService.updateProduct(this.currentProduct.id, productData);
+        } else {
+          // Create new product
+          response = await inventoryService.createProduct(productData);
+        }
+
         if (response.success) {
           this.showNotification(response.message, 'success');
           await this.loadInventoryData();
@@ -1258,31 +1026,30 @@ export default {
         }
       } catch (error) {
         console.error('Error saving product:', error);
-        this.showNotification(error.message || 'Failed to save product', 'error');
+        this.showNotification(error.message || 'Error saving product', 'error');
       } finally {
         this.saving = false;
       }
     },
 
-    getEmptyProduct() {
-      return {
-        id: null,
-        name: '',
-        description: '',
-        price: 0,
-        original_price: null,
-        image: '',
-        imageFile: null,
-        category_id: '',
-        calories: 0,
-        stock: 0,
-        in_stock: true,
-        is_new: false,
-        is_bestseller: false,
-        customizable: false,
-        sizes: [{ name: 'Regular', price: 0 }],
-        addons: []
-      };
+   getEmptyProduct() {
+  return {
+    id: null,
+    name: '',
+    description: '',
+    price: 0,
+    originalPrice: null,
+    image: '',
+    category: '', // This will be the enum value
+    calories: 0,
+    stock: 0,
+    inStock: true,
+    isNew: false,
+    isBestseller: false,
+    customizable: false,
+    imageFile: null
+  };
+
     },
 
     addSize() {
@@ -1316,20 +1083,19 @@ export default {
         const response = await inventoryService.exportCSV();
         
         if (response.success) {
-          // Convert to CSV and download
-          const csvContent = response.data.map(row => 
+          // Convert data to CSV and download
+          const csvData = response.data;
+          const csvContent = csvData.map(row => 
             row.map(cell => `"${cell}"`).join(',')
           ).join('\n');
           
-          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', `inventory-${new Date().toISOString().split('T')[0]}.csv`);
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
+          const blob = new Blob([csvContent], { type: 'text/csv' });
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `inventory-${new Date().toISOString().split('T')[0]}.csv`;
+          a.click();
+          window.URL.revokeObjectURL(url);
           
           this.showNotification('Inventory exported successfully', 'success');
         } else {
@@ -1337,7 +1103,7 @@ export default {
         }
       } catch (error) {
         console.error('Error exporting inventory:', error);
-        this.showNotification(error.message || 'Failed to export inventory', 'error');
+        this.showNotification(error.message || 'Error exporting inventory', 'error');
       }
     },
 
@@ -1349,36 +1115,72 @@ export default {
     handleImageUpload(event) {
       const file = event.target.files[0];
       if (file) {
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          this.showNotification('Please select an image file', 'error');
+          return;
+        }
+        
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          this.showNotification('Image size should be less than 5MB', 'error');
+          return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.currentProduct.image = e.target.result;
+        };
+        reader.readAsDataURL(file);
+        
+        // Store the file object for upload
         this.currentProduct.imageFile = file;
-        // Don't set the image preview here, let the template handle it
       }
     },
 
     removeImage() {
       this.currentProduct.image = '';
       this.currentProduct.imageFile = null;
-      if (this.$refs.imageInput) {
-        this.$refs.imageInput.value = '';
-      }
+      this.$refs.imageInput.value = '';
     },
 
     showNotification(message, type = 'info') {
-      // Simple notification implementation - you can replace with a proper toast library
       const notification = {
         id: Date.now(),
         title: type.charAt(0).toUpperCase() + type.slice(1),
         message: message,
-        icon: type === 'success' ? 'fas fa-check-circle' : 
-              type === 'error' ? 'fas fa-exclamation-circle' : 'fas fa-info-circle',
-        time: 'Just now'
+        type: type,
+        icon: this.getNotificationIcon(type),
+        time: new Date().toLocaleTimeString()
       };
       
+      // Add to notifications array for the dropdown
       this.notifications.unshift(notification);
+      
+      // Show browser alert for now (you can replace with a proper toast library)
+      const alertMessage = `${type.toUpperCase()}: ${message}`;
+      if (type === 'error') {
+        console.error(alertMessage);
+      } else if (type === 'warning') {
+        console.warn(alertMessage);
+      } else {
+        console.log(alertMessage);
+      }
       
       // Auto remove after 5 seconds
       setTimeout(() => {
-        this.dismissNotification(notification);
+        this.notifications = this.notifications.filter(n => n.id !== notification.id);
       }, 5000);
+    },
+
+    getNotificationIcon(type) {
+      const icons = {
+        success: 'fas fa-check-circle',
+        error: 'fas fa-exclamation-circle',
+        warning: 'fas fa-exclamation-triangle',
+        info: 'fas fa-info-circle'
+      };
+      return icons[type] || icons.info;
     }
   }
 }
@@ -2016,35 +1818,6 @@ export default {
   min-height: auto;
 }
 
-/* Loading State */
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-  color: #666;
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #88592e;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.admin-container.dark-mode .loading-state {
-  color: #a0a5c0;
-}
-
 /* Header Styles */
 .inventory-header {
   background: white;
@@ -2287,6 +2060,37 @@ export default {
 .stock-filter:focus {
   outline: none;
   border-color: #88592e;
+}
+
+/* Loading State */
+.loading-state {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.loading-spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #88592e;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 2s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.admin-container.dark-mode .loading-state {
+  color: #a0a5c0;
+}
+
+.admin-container.dark-mode .loading-spinner {
+  border-color: #2a2a3a;
+  border-top-color: #88592e;
 }
 
 /* Table Styles */
@@ -2967,13 +2771,8 @@ export default {
   color: #5a3921;
 }
 
-.btn.secondary:hover:not(:disabled) {
+.btn.secondary:hover {
   background: #c4a57c;
-}
-
-.btn.secondary:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
 }
 
 .btn.danger {

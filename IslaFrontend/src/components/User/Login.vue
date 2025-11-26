@@ -13,19 +13,6 @@
                 <p class="login-subtitle">Please sign in to your account</p>
               </div>
 
-              <!-- Fast Login - Gmail Only -->
-              <div class="fast-login">
-                <button type="button" class="gmail-btn" @click="fastLogin('gmail')">
-                  <svg class="gmail-icon" viewBox="0 0 24 24" width="16" height="16">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43-.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  Login with Gmail
-                </button>
-              </div>
-
               <form @submit.prevent="handleLogin" class="login-form">
                 <div class="form-group">
                   <div class="label-input-group">
@@ -88,19 +75,6 @@
                 <img src="/images/logo.png" alt="ISLA CAFE Logo" class="login-logo">
                 <h1 class="login-title">ISLA CAFE</h1>
                 <p class="login-subtitle">Create your account</p>
-              </div>
-
-              <!-- Fast Register - Gmail Only -->
-              <div class="fast-login">
-                <button type="button" class="gmail-btn" @click="fastRegister('gmail')">
-                  <svg class="gmail-icon" viewBox="0 0 24 24" width="16" height="16">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43-.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  Sign up with Gmail
-                </button>
               </div>
 
               <form @submit.prevent="handleRegister" class="login-form">
@@ -201,7 +175,7 @@ export default {
         email: '',
         password: '',
         confirmPassword: '',
-        password_confirmation: '' // Laravel expects this field
+        password_confirmation: ''
       },
       loading: false,
       error: ''
@@ -228,7 +202,7 @@ export default {
 
         console.log('✅ Login successful, user data:', response.user);
         
-        // FIXED: Redirect based on user role
+        // Simple role-based redirection - ADMIN or USER only
         this.redirectBasedOnRole(response.user);
         
       } catch (err) {
@@ -268,8 +242,9 @@ export default {
 
         console.log('✅ Registration successful, user data:', response.user);
         
-        // FIXED: Redirect based on user role after registration
-        this.redirectBasedOnRole(response.user);
+        // After registration, always redirect to user account
+        console.log('👤 New user registered, redirecting to User Account');
+        this.router.push('/user/account');
         
       } catch (err) {
         this.error = err.message || 'Registration failed. Please try again.';
@@ -279,7 +254,7 @@ export default {
       }
     },
 
-    // FIXED: New method to handle role-based redirection
+    // Simple role-based redirection - ADMIN or USER only
     redirectBasedOnRole(user) {
       if (!user) {
         console.warn('No user data available for redirection');
@@ -287,20 +262,16 @@ export default {
         return;
       }
 
-      console.log(`🔄 Redirecting user with role: ${user.role}`);
+      const userRole = user.role?.toLowerCase();
+      console.log(`🔄 Redirecting user with role: ${userRole}`);
       
-      switch (user.role) {
-        case 'admin':
-        case 'superadmin':
-          this.router.push('/admin/dashboard');
-          break;
-        case 'staff':
-          this.router.push('/staff/dashboard');
-          break;
-        case 'user':
-        default:
-          this.router.push('/user/account');
-          break;
+      if (userRole === 'admin') {
+        console.log('🚀 Redirecting to Admin Dashboard');
+        this.router.push('/admin/dashboard');
+      } else {
+        // Default to user account for all other roles (including 'user')
+        console.log('👤 Redirecting to User Account');
+        this.router.push('/user/account');
       }
     },
 
@@ -314,24 +285,6 @@ export default {
       this.registerForm.email = '';
       this.registerForm.password = '';
       this.registerForm.confirmPassword = '';
-    },
-
-    fastLogin(provider) {
-      // Implement social login logic here
-      this.loading = true;
-      setTimeout(() => {
-        alert(`Fast login with ${provider} would be implemented here`);
-        this.loading = false;
-      }, 1000);
-    },
-
-    fastRegister(provider) {
-      // Implement social registration logic here
-      this.loading = true;
-      setTimeout(() => {
-        alert(`Fast registration with ${provider} would be implemented here`);
-        this.loading = false;
-      }, 1000);
     }
   },
   mounted() {
