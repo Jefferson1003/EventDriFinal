@@ -57,12 +57,12 @@
           <!-- Admin Account -->
           <div class="admin-nav-item admin-dropdown">
             <div class="admin-user-account" @click="toggleUserMenu">
-              <img :src="getFullAvatarUrl(admin.avatar)" alt="Admin" class="admin-user-avatar" @error="handleAvatarError">
+              <img :src="admin.avatar || getDefaultAvatar()" alt="Admin" class="admin-user-avatar" @error="handleAvatarError">
               <span class="admin-user-name">{{ admin.name || 'Admin' }}</span>
             </div>
             <div v-if="showUserMenu" class="admin-dropdown-content admin-user-dropdown" @click.stop>
               <div class="admin-user-info">
-                <img :src="getFullAvatarUrl(admin.avatar)" alt="Admin" class="admin-user-avatar-large" @error="handleAvatarError">
+                <img :src="admin.avatar || getDefaultAvatar()" alt="Admin" class="admin-user-avatar-large" @error="handleAvatarError">
                 <div class="admin-user-details">
                   <h4>{{ admin.name || 'Admin' }}</h4>
                   <p>{{ admin.email || 'admin@islacafe.com' }}</p>
@@ -152,8 +152,24 @@
 
       <!-- Main Content Area -->
       <main class="admin-content">
-        <!-- Account Content -->
-        <div class="admin-account-content">
+        <!-- Loading State -->
+        <div v-if="loading" class="loading-container">
+          <div class="loading-spinner"></div>
+          <p>Loading admin data...</p>
+        </div>
+
+        <!-- Error State -->
+        <div v-else-if="error" class="error-container">
+          <i class="fas fa-exclamation-triangle"></i>
+          <h3>Failed to load admin data</h3>
+          <p>{{ error }}</p>
+          <button @click="loadAdminData" class="btn-primary">
+            <i class="fas fa-redo"></i> Retry
+          </button>
+        </div>
+
+        <!-- Main Content -->
+        <div v-else class="admin-account-content">
           <!-- Header -->
           <div class="account-header">
             <div class="header-content">
@@ -169,29 +185,15 @@
             </div>
           </div>
 
-          <!-- Loading State -->
-          <div v-if="loading" class="loading-container">
-            <div class="loading-spinner"></div>
-            <p>Loading admin profile...</p>
-          </div>
-
-          <!-- Error State -->
-          <div v-else-if="error" class="error-container">
-            <i class="fas fa-exclamation-triangle"></i>
-            <h3>Failed to load profile</h3>
-            <p>{{ error }}</p>
-            <button class="btn-primary" @click="loadAdminData">Retry</button>
-          </div>
-
           <!-- Main Content Grid -->
-          <div v-else class="account-layout">
+          <div class="account-layout">
             <!-- Profile Section -->
             <div class="profile-section">
               <div class="profile-card">
                 <div class="profile-header">
                   <div class="avatar-container">
                     <div class="avatar-wrapper">
-                      <img :src="getFullAvatarUrl(adminData.avatar)" :alt="adminData.name" class="profile-avatar">
+                      <img :src="adminData.avatar || getDefaultAvatar()" :alt="adminData.name" class="profile-avatar" @error="handleAvatarError">
                       <button class="avatar-edit-btn" @click="triggerAvatarUpload" title="Change photo">
                         <i class="fas fa-camera"></i>
                       </button>
@@ -217,7 +219,7 @@
                       <i class="fas fa-sign-in-alt"></i>
                     </div>
                     <div class="stat-content">
-                      <div class="stat-value">{{ adminData.stats.lastLogin }}</div>
+                      <div class="stat-value">{{ adminData.stats?.lastLogin || 'N/A' }}</div>
                       <div class="stat-label">Last Login</div>
                     </div>
                   </div>
@@ -226,7 +228,7 @@
                       <i class="fas fa-clock"></i>
                     </div>
                     <div class="stat-content">
-                      <div class="stat-value">{{ adminData.stats.sessions }}</div>
+                      <div class="stat-value">{{ adminData.stats?.sessions || 0 }}</div>
                       <div class="stat-label">Active Sessions</div>
                     </div>
                   </div>
@@ -280,7 +282,6 @@
                           v-model="passwordForm.current" 
                           placeholder="Enter current password"
                           required
-                          :disabled="updatingPassword"
                         >
                       </div>
                     </div>
@@ -292,7 +293,6 @@
                           v-model="passwordForm.new" 
                           placeholder="Enter new password"
                           required
-                          :disabled="updatingPassword"
                         >
                       </div>
                       <div class="form-group">
@@ -302,7 +302,6 @@
                           v-model="passwordForm.confirm" 
                           placeholder="Confirm new password"
                           required
-                          :disabled="updatingPassword"
                         >
                       </div>
                     </div>
@@ -372,18 +371,18 @@
               <form @submit.prevent="saveProfile" class="edit-form">
                 <div class="form-group">
                   <label>Full Name</label>
-                  <input type="text" v-model="editForm.name" required :disabled="updatingProfile">
+                  <input type="text" v-model="editForm.name" required>
                 </div>
                 <div class="form-group">
                   <label>Email Address</label>
-                  <input type="email" v-model="editForm.email" required :disabled="updatingProfile">
+                  <input type="email" v-model="editForm.email" required>
                 </div>
                 <div class="form-group">
                   <label>Phone Number</label>
-                  <input type="tel" v-model="editForm.phone" placeholder="+63 912 345 6789" :disabled="updatingProfile">
+                  <input type="tel" v-model="editForm.phone" placeholder="+63 912 345 6789">
                 </div>
                 <div class="modal-actions">
-                  <button type="button" @click="closeModal" class="btn-secondary" :disabled="updatingProfile">Cancel</button>
+                  <button type="button" @click="closeModal" class="btn-secondary">Cancel</button>
                   <button type="submit" class="btn-primary" :disabled="updatingProfile">
                     {{ updatingProfile ? 'Saving...' : 'Save Changes' }}
                   </button>
@@ -398,6 +397,9 @@
 </template>
 
 <script>
+import apiService from '../../services/api';
+import authService from '../../services/auth';
+
 export default {
   name: 'AdminAccount',
   data() {
@@ -486,87 +488,142 @@ export default {
     document.removeEventListener('click', this.handleClickOutside);
   },
   methods: {
-    // API Base URL
-    getApiUrl() {
-      return 'http://localhost/isla-cafe/api/admin/account'; // Adjust based on your API URL
-    },
-
-    // Get full avatar URL
-    getFullAvatarUrl(avatarPath) {
-      if (!avatarPath) {
-        return '/images/admin-avatar.png';
-      }
-      if (avatarPath.startsWith('http')) {
-        return avatarPath;
-      }
-      return `http://localhost/isla-cafe/public/uploads/${avatarPath}`; // Adjust based on your file structure
-    },
-
-    // Load admin data from API
+    // API Methods using your apiService
     async loadAdminData() {
       this.loading = true;
       this.error = null;
-      
+
       try {
-        const token = localStorage.getItem('islaAccessToken');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
-        const response = await fetch(`${this.getApiUrl()}/profile`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to fetch admin profile');
-        }
-
-        if (data.success && data.data) {
-          this.adminData = data.data;
+         const response = await apiService.get('/api/admin/account/profile');
+        
+        if (response.data.success) {
+          this.adminData = response.data.data;
           this.admin = {
-            name: data.data.name,
-            email: data.data.email,
-            avatar: data.data.avatar
+            name: response.data.data.name,
+            email: response.data.data.email,
+            avatar: response.data.data.avatar
           };
           
-          // Save to localStorage for fallback
-          localStorage.setItem('islaAdmin', JSON.stringify(data.data));
+          // Save to localStorage for quick access
+          localStorage.setItem('islaAdmin', JSON.stringify(response.data.data));
         } else {
-          throw new Error('Invalid response format');
+          throw new Error(response.data.message || 'Failed to load admin data');
         }
       } catch (error) {
         console.error('Error loading admin data:', error);
-        this.error = error.message;
-        // Try to load from localStorage as fallback
-        this.loadFromLocalStorage();
+        this.error = error.response?.data?.message || error.message || 'Failed to load admin data';
+        this.loadFallbackData();
       } finally {
         this.loading = false;
       }
     },
 
-    // Load from localStorage as fallback
-    loadFromLocalStorage() {
+    async saveProfile() {
+      this.updatingProfile = true;
+      
       try {
-        const savedAdmin = localStorage.getItem('islaAdmin');
-        if (savedAdmin) {
-          const adminData = JSON.parse(savedAdmin);
-          this.adminData = { ...adminData };
-          this.admin = { 
-            name: adminData.name,
-            email: adminData.email,
-            avatar: adminData.avatar
-          };
+        const response = await apiService.put('/api/admin/account/profile', this.editForm);
+
+        if (response.data.success) {
+      this.adminData = { ...this.adminData, ...response.data.data };
+      this.admin.name = response.data.data.name;
+      this.admin.email = response.data.data.email;
+      
+      localStorage.setItem('islaAdmin', JSON.stringify(this.adminData));
+      this.showNotification('Profile updated successfully', 'success');
+      this.closeModal();
+    } else {
+      throw new Error(response.data.message || 'Failed to update profile');
+    }
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    this.showNotification(error.response?.data?.message || error.message || 'Error updating profile', 'error');
+  } finally {
+    this.updatingProfile = false;
+  }
+},
+    async updatePassword() {
+      if (this.passwordForm.new !== this.passwordForm.confirm) {
+        this.showNotification('Passwords do not match', 'error');
+        return;
+      }
+      if (this.passwordForm.new.length < 6) {
+        this.showNotification('Password must be at least 6 characters', 'error');
+        return;
+      }
+
+      this.updatingPassword = true;
+
+      try {
+         const response = await apiService.put('/api/admin/account/password', this.passwordForm);
+
+        if (response.data.success) {
+          this.showNotification('Password updated successfully', 'success');
+          this.passwordForm = { current: '', new: '', confirm: '' };
         } else {
-          this.setFallbackAdminData();
+          throw new Error(response.data.message || 'Failed to update password');
         }
       } catch (error) {
-        console.error('Error loading from localStorage:', error);
+        console.error('Error updating password:', error);
+        this.showNotification(error.response?.data?.message || error.message || 'Error updating password', 'error');
+      } finally {
+        this.updatingPassword = false;
+      }
+    },
+
+    async handleAvatarUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      // Validate file type and size
+      if (!file.type.startsWith('image/')) {
+        this.showNotification('Please select an image file', 'error');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        this.showNotification('Image size should be less than 5MB', 'error');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      try {
+         const response = await apiService.post('/api/admin/account/avatar', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
+
+        if (response.data.success) {
+          this.adminData.avatar = response.data.data.avatar;
+          this.admin.avatar = response.data.data.avatar;
+          
+          // Update localStorage
+          localStorage.setItem('islaAdmin', JSON.stringify(this.adminData));
+          
+          this.showNotification('Avatar updated successfully', 'success');
+        } else {
+          throw new Error(response.data.message || 'Failed to update avatar');
+        }
+      } catch (error) {
+        console.error('Error updating avatar:', error);
+        this.showNotification(error.response?.data?.message || error.message || 'Error updating avatar', 'error');
+      }
+    },
+
+    // Load fallback data if API fails
+    loadFallbackData() {
+      const savedAdmin = localStorage.getItem('islaAdmin');
+      if (savedAdmin) {
+        const adminData = JSON.parse(savedAdmin);
+        this.adminData = { ...adminData };
+        this.admin = {
+          name: adminData.name,
+          email: adminData.email,
+          avatar: adminData.avatar
+        };
+      } else {
         this.setFallbackAdminData();
       }
     },
@@ -576,14 +633,14 @@ export default {
       this.admin = {
         name: 'Admin User',
         email: 'admin@islacafe.com',
-        avatar: '/images/admin-avatar.png'
+        avatar: this.getDefaultAvatar()
       };
       this.adminData = {
         name: 'Admin User',
         email: 'admin@islacafe.com',
         phone: '+63 912 345 6789',
         role: 'Administrator',
-        avatar: '/images/admin-avatar.png',
+        avatar: this.getDefaultAvatar(),
         stats: {
           lastLogin: '2 hours ago',
           sessions: 1
@@ -591,16 +648,9 @@ export default {
       };
     },
 
-    // Load notifications from API
-    async loadNotifications() {
-      try {
-        // This would typically come from an API call
-        // For now, we'll set empty array
-        this.notifications = [];
-      } catch (error) {
-        console.error('Error loading notifications:', error);
-        this.notifications = [];
-      }
+    // Get default avatar
+    getDefaultAvatar() {
+      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMzAiIGZpbGw9IiNGNUY1RjUiLz4KPGNpcmNsZSBjeD0iMzAiIGN5PSIyNCIgcj0iOCIgZmlsbD0iIzg4NTkyRSIvPgo8cGF0aCBkPSJNMTggNDhDMjEuMzEzNyA0OCAyNCA0NS4zMTM3IDI0IDQyQzI0IDM4LjY4NjMgMjEuMzEzNyAzNiAxOCAzNkMxNC42ODYzIDM2IDEyIDM4LjY4NjMgMTIgNDJDMTIgNDUuMzEzNyAxNC42ODYzIDQ4IDE4IDQ4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
     },
 
     // Navbar Methods
@@ -652,7 +702,7 @@ export default {
     },
     
     handleAvatarError(event) {
-      event.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMzAiIGZpbGw9IiNGNUY1RjUiLz4KPGNpcmNsZSBjeD0iMzAiIGN5PSIyNCIgcj0iOCIgZmlsbD0iIzg4NTkyRSIvPgo8cGF0aCBkPSJNMTggNDhDMjEuMzEzNyA0OCAyNCA0NS4zMTM3IDI0IDQyQzI0IDM4LjY4NjMgMjEuMzEzNyAzNiAxOCAzNkMxNC42ODYzIDM2IDEyIDM4LjY4NjMgMTIgNDJDMTIgNDUuMzEzNyAxNC42ODYzIDQ4IDE4IDQ4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
+      event.target.src = this.getDefaultAvatar();
     },
 
     // User methods
@@ -672,6 +722,17 @@ export default {
     },
 
     // Notification methods
+    async loadNotifications() {
+      try {
+        // This would typically come from an API call
+        // For now, we'll set empty array
+        this.notifications = [];
+      } catch (error) {
+        console.error('Error loading notifications:', error);
+        this.notifications = [];
+      }
+    },
+
     dismissNotification(notification) {
       this.notifications = this.notifications.filter(n => n.id !== notification.id);
     },
@@ -701,155 +762,6 @@ export default {
       this.showEditModal = true;
     },
     
-    async saveProfile() {
-      this.updatingProfile = true;
-      try {
-        const token = localStorage.getItem('islaAccessToken');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
-        const response = await fetch(`${this.getApiUrl()}/profile`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(this.editForm)
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to update profile');
-        }
-
-        if (data.success) {
-          this.adminData = { ...this.adminData, ...this.editForm };
-          this.admin.name = this.editForm.name; // Update navbar admin name
-          
-          // Update localStorage
-          localStorage.setItem('islaAdmin', JSON.stringify(this.adminData));
-          
-          this.showNotification('Profile updated successfully', 'success');
-          this.closeModal();
-        } else {
-          throw new Error(data.message || 'Failed to update profile');
-        }
-      } catch (error) {
-        console.error('Error saving profile:', error);
-        this.showNotification(error.message, 'error');
-      } finally {
-        this.updatingProfile = false;
-      }
-    },
-    
-    async updatePassword() {
-      this.updatingPassword = true;
-      try {
-        if (this.passwordForm.new !== this.passwordForm.confirm) {
-          this.showNotification('Passwords do not match', 'error');
-          return;
-        }
-        if (this.passwordForm.new.length < 6) {
-          this.showNotification('Password must be at least 6 characters', 'error');
-          return;
-        }
-
-        const token = localStorage.getItem('islaAccessToken');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
-        const response = await fetch(`${this.getApiUrl()}/password`, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            current_password: this.passwordForm.current,
-            new_password: this.passwordForm.new,
-            confirm_password: this.passwordForm.confirm
-          })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to update password');
-        }
-
-        if (data.success) {
-          this.showNotification('Password updated successfully', 'success');
-          this.passwordForm = { current: '', new: '', confirm: '' };
-        } else {
-          throw new Error(data.message || 'Failed to update password');
-        }
-      } catch (error) {
-        console.error('Error updating password:', error);
-        this.showNotification(error.message, 'error');
-      } finally {
-        this.updatingPassword = false;
-      }
-    },
-    
-    async handleAvatarUpload(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        this.showNotification('Please select an image file', 'error');
-        return;
-      }
-
-      // Validate file size (max 2MB)
-      if (file.size > 2 * 1024 * 1024) {
-        this.showNotification('Image size should be less than 2MB', 'error');
-        return;
-      }
-
-      try {
-        const token = localStorage.getItem('islaAccessToken');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-
-        const formData = new FormData();
-        formData.append('avatar', file);
-
-        const response = await fetch(`${this.getApiUrl()}/avatar`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          },
-          body: formData
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to upload avatar');
-        }
-
-        if (data.success && data.data) {
-          this.adminData.avatar = data.data.avatar;
-          this.admin.avatar = data.data.avatar; // Update navbar avatar too
-          
-          // Update localStorage
-          localStorage.setItem('islaAdmin', JSON.stringify(this.adminData));
-          
-          this.showNotification('Avatar updated successfully', 'success');
-        } else {
-          throw new Error(data.message || 'Failed to upload avatar');
-        }
-      } catch (error) {
-        console.error('Error uploading avatar:', error);
-        this.showNotification(error.message, 'error');
-      }
-    },
-    
     triggerAvatarUpload() {
       this.$refs.avatarInput.click();
     },
@@ -859,14 +771,147 @@ export default {
     },
     
     showNotification(message, type = 'info') {
-      // You can replace this with a proper notification system
-      alert(`${type.toUpperCase()}: ${message}`);
+      // Simple notification - you can replace with a proper notification component
+      const notification = document.createElement('div');
+      notification.className = `custom-notification ${type}`;
+      notification.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check' : 'exclamation'}-circle"></i>
+        <span>${message}</span>
+      `;
+      
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.classList.add('show');
+      }, 100);
+      
+      setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => {
+          document.body.removeChild(notification);
+        }, 300);
+      }, 3000);
     }
   }
 }
 </script>
 
 <style scoped>
+/* Add these new styles for loading and error states */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #88592e;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  background: white;
+  border-radius: 12px;
+  margin: 20px;
+}
+
+.admin-container.dark-mode .error-container {
+  background: var(--isla-dark-card);
+  color: var(--isla-dark-text);
+}
+
+.error-container i {
+  font-size: 48px;
+  color: #e74c3c;
+  margin-bottom: 16px;
+}
+
+.error-container h3 {
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.admin-container.dark-mode .error-container h3 {
+  color: var(--isla-dark-text);
+}
+
+.error-container p {
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.admin-container.dark-mode .error-container p {
+  color: #a0a5c0;
+}
+
+/* Add notification styles */
+.custom-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: white;
+  border-left: 4px solid #88592e;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 400px;
+  transform: translateX(400px);
+  transition: transform 0.3s ease;
+  z-index: 10000;
+}
+
+.admin-container.dark-mode .custom-notification {
+  background: var(--isla-dark-card);
+  color: var(--isla-dark-text);
+}
+
+.custom-notification.show {
+  transform: translateX(0);
+}
+
+.custom-notification.success {
+  border-left-color: #27ae60;
+}
+
+.custom-notification.error {
+  border-left-color: #e74c3c;
+}
+
+.custom-notification i {
+  font-size: 20px;
+}
+
+.custom-notification.success i {
+  color: #27ae60;
+}
+
+.custom-notification.error i {
+  color: #e74c3c;
+}
+
+/* Rest of your existing CSS styles remain exactly the same */
 /* CSS Variables for Dark Mode */
 :root {
   --isla-dark-bg: #0f0f14;
@@ -1368,7 +1413,7 @@ export default {
 /* Sidebar Styles */
 .admin-sidebar {
   width: 200px;
-  background: #5a3921; /* Dark brown for day mode */
+  background: #5a3921;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
   position: sticky;
@@ -1380,7 +1425,7 @@ export default {
 }
 
 .admin-sidebar.dark-mode {
-  background: #2a2a3a; /* Dark background for dark mode */
+  background: #2a2a3a;
 }
 
 .admin-sidebar-menu {
@@ -1394,7 +1439,7 @@ export default {
   display: flex;
   align-items: center;
   padding: 12px 20px;
-  color: #d4b896; /* Light beige text for day mode */
+  color: #d4b896;
   text-decoration: none;
   transition: all 0.3s ease;
   font-weight: 600;
@@ -1404,45 +1449,45 @@ export default {
 }
 
 .admin-sidebar.dark-mode .admin-sidebar-item {
-  color: #e0e0e0; /* Light text for dark mode */
+  color: #e0e0e0;
 }
 
 .admin-sidebar-item:hover {
-  background: #6b451e; /* Darker brown on hover for day mode */
+  background: #6b451e;
   color: #ffffff;
   border-left-color: #88592e;
 }
 
 .admin-sidebar.dark-mode .admin-sidebar-item:hover {
-  background: #3a3a4a; /* Darker background on hover for dark mode */
+  background: #3a3a4a;
   color: #ffffff;
 }
 
 .admin-active-sidebar-item {
-  background: #6b451e; /* Active state for day mode */
+  background: #6b451e;
   color: #ffffff;
   border-left-color: #88592e;
 }
 
 .admin-sidebar.dark-mode .admin-active-sidebar-item {
-  background: #88592e; /* Active state for dark mode */
+  background: #88592e;
   color: #ffffff;
 }
 
 .admin-sidebar-item i {
   width: 18px;
   text-align: center;
-  color: #d4b896; /* Light beige icons for day mode */
+  color: #d4b896;
   font-size: 14px;
 }
 
 .admin-sidebar.dark-mode .admin-sidebar-item i {
-  color: #e0e0e0; /* Light icons for dark mode */
+  color: #e0e0e0;
 }
 
 .admin-sidebar-item:hover i,
 .admin-active-sidebar-item i {
-  color: #ffffff; /* White icons on hover/active */
+  color: #ffffff;
 }
 
 /* Sidebar Logout Section */
@@ -1491,7 +1536,7 @@ export default {
   background: var(--isla-dark-bg);
 }
 
-/* NEW ACCOUNT CONTENT STYLES */
+/* Account Content Styles */
 .admin-account-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -1540,56 +1585,6 @@ export default {
   color: #a0a5c0;
 }
 
-/* Loading and Error States */
-.loading-container,
-.error-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-  text-align: center;
-}
-
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #88592e;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 16px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.error-container i {
-  font-size: 48px;
-  color: #e74c3c;
-  margin-bottom: 16px;
-}
-
-.error-container h3 {
-  color: #333;
-  margin-bottom: 8px;
-}
-
-.admin-container.dark-mode .error-container h3 {
-  color: var(--isla-dark-text);
-}
-
-.error-container p {
-  color: #666;
-  margin-bottom: 20px;
-}
-
-.admin-container.dark-mode .error-container p {
-  color: #a0a5c0;
-}
-
 /* Buttons */
 .btn-primary {
   background: #88592e;
@@ -1634,15 +1629,9 @@ export default {
   gap: 6px;
 }
 
-.btn-secondary:hover:not(:disabled) {
+.btn-secondary:hover {
   background: #e0d6c8;
   transform: translateY(-1px);
-}
-
-.btn-secondary:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
-  transform: none;
 }
 
 /* Main Layout */
@@ -1953,17 +1942,6 @@ export default {
   box-shadow: 0 0 0 3px rgba(136, 89, 46, 0.1);
 }
 
-.form-group input:disabled {
-  background: #f5f5f5;
-  color: #999;
-  cursor: not-allowed;
-}
-
-.admin-container.dark-mode .form-group input:disabled {
-  background: #2a2a3a;
-  color: #666;
-}
-
 /* Password Strength */
 .password-strength {
   margin: 8px 0;
@@ -2176,19 +2154,14 @@ input:checked + .slider:before {
   border-radius: 4px;
 }
 
-.close-btn:hover:not(:disabled) {
+.close-btn:hover {
   color: #333;
   background: rgba(0, 0, 0, 0.1);
 }
 
-.admin-container.dark-mode .close-btn:hover:not(:disabled) {
+.admin-container.dark-mode .close-btn:hover {
   color: var(--isla-dark-text);
   background: rgba(255, 255, 255, 0.1);
-}
-
-.close-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
 }
 
 .modal-body {
@@ -2296,7 +2269,7 @@ input:checked + .slider:before {
     justify-content: center;
   }
 }
-</style>
+</style>  
 
 <style>
 /* Global Dark Mode Styles - Keep this unscoped */
