@@ -1,3 +1,4 @@
+// services/auth.js
 import axios from 'axios';
 
 const API_URL = 'http://localhost:8000';
@@ -14,7 +15,7 @@ class AuthService {
     });
 
     // Add request interceptor to include token
-   this.api.interceptors.request.use(
+    this.api.interceptors.request.use(
       (config) => {
         const token = this.getToken();
         if (token) {
@@ -30,7 +31,6 @@ class AuthService {
         return Promise.reject(error);
       }
     );
-
 
     // Add response interceptor to handle errors
     this.api.interceptors.response.use(
@@ -64,14 +64,14 @@ class AuthService {
     try {
       console.log('🔐 Attempting login with:', { 
         email: credentials.email, 
-        password: '***' // Don't log actual password
+        password: '***'
       });
       
       const response = await this.api.post('/auth/login', credentials);
       
       console.log('✅ Login successful:', response.data);
       
-      // Extract token from response - handle different possible formats
+      // Extract token from response
       const token = response.data.tokens?.access_token || 
                    response.data.token || 
                    response.data.access_token ||
@@ -82,7 +82,7 @@ class AuthService {
         throw new Error('No authentication token received');
       }
       
-      // Store token and user data
+      // Store token and user data using CORRECT keys
       this.setToken(token);
       
       if (response.data.user) {
@@ -99,7 +99,6 @@ class AuthService {
     } catch (error) {
       console.error('❌ Login failed:', error);
       
-      // Extract meaningful error message
       const errorMessage = this.extractErrorMessage(error) || 
                           'Login failed. Please check your credentials and try again.';
       
@@ -159,7 +158,7 @@ class AuthService {
       const token = this.getToken();
       if (token) {
         await this.api.post('/auth/logout', {
-          refresh_token: this.getRefreshToken() // if you have refresh token logic
+          refresh_token: this.getRefreshToken()
         });
       }
     } catch (error) {
@@ -212,52 +211,49 @@ class AuthService {
     }
   }
 
-  // Utility methods
- setToken(token) {
-  localStorage.setItem('access_token', token); // Change from 'token' to 'access_token'
-  console.log('💾 Token stored in localStorage');
-}
-
-  setUser(user) {
-    localStorage.setItem('user', JSON.stringify(user));
-    console.log('💾 User data stored in localStorage');
+  // Utility methods - UPDATED TO USE CORRECT KEYS
+  setToken(token) {
+    localStorage.setItem('islaAccessToken', token);
+    console.log('💾 Token stored in localStorage as islaAccessToken');
   }
 
- getToken() {
-  return localStorage.getItem('access_token'); // Change from 'token' to 'access_token'
-}
+  setUser(user) {
+    localStorage.setItem('islaAdmin', JSON.stringify(user));
+    console.log('💾 User data stored in localStorage as islaAdmin');
+  }
+
+  getToken() {
+    return localStorage.getItem('islaAccessToken');
+  }
 
   getUser() {
-    const user = localStorage.getItem('user');
+    const user = localStorage.getItem('islaAdmin');
     return user ? JSON.parse(user) : null;
   }
 
   getRefreshToken() {
-    // If you implement refresh token logic, store it separately
-    return localStorage.getItem('refresh_token');
+    return localStorage.getItem('islaRefreshToken');
   }
 
   clearAuthData() {
-  localStorage.removeItem('access_token'); // Change from 'token' to 'access_token'
-  localStorage.removeItem('user');
-  localStorage.removeItem('refresh_token');
-  console.log('🧹 All auth data cleared from localStorage');
-}
+    localStorage.removeItem('islaAccessToken');
+    localStorage.removeItem('islaAdmin');
+    localStorage.removeItem('islaRefreshToken');
+    console.log('🧹 All auth data cleared from localStorage');
+  }
 
   isAuthenticated() {
     const token = this.getToken();
-    if (!token) return false;
-
-    // Optional: Check token expiration if you have JWT decoding
-    try {
-      // If you want to check JWT expiration, you can decode it here
-      // const payload = JSON.parse(atob(token.split('.')[1]));
-      // return payload.exp > Date.now() / 1000;
-      return true;
-    } catch (error) {
-      console.warn('⚠️ Token validation error:', error);
-      return false;
-    }
+    const user = this.getUser();
+    
+    const isAuth = !!(token && user);
+    console.log('🔐 authService.isAuthenticated():', { 
+      hasToken: !!token, 
+      hasUser: !!user, 
+      result: isAuth 
+    });
+    
+    return isAuth;
   }
 
   extractErrorMessage(error) {
@@ -309,30 +305,30 @@ class AuthService {
     }
   }
 
-  // Optional: Method to check if user has specific role
+  // Role checking methods
   hasRole(role) {
     const user = this.getUser();
     return user?.role === role;
   }
 
-  // Optional: Method to check if user is admin
- isAdmin() {
-  const user = this.getUser();
-  return user?.role?.toLowerCase() === 'admin';
-}
+  isAdmin() {
+    const user = this.getUser();
+    return user?.role?.toLowerCase() === 'admin';
+  }
 
-isUser() {
-  const user = this.getUser();
-  const role = user?.role?.toLowerCase();
-  return role === 'user' || !role; // Default to user if no role
-}
-getRedirectPath() {
-  const user = this.getUser();
-  if (!user) return '/login';
-  
-  const role = user.role?.toLowerCase();
-  return role === 'admin' ? '/admin/dashboard' : '/user/account';
-}
+  isUser() {
+    const user = this.getUser();
+    const role = user?.role?.toLowerCase();
+    return role === 'user' || !role;
+  }
+
+  getRedirectPath() {
+    const user = this.getUser();
+    if (!user) return '/login';
+    
+    const role = user.role?.toLowerCase();
+    return role === 'admin' ? '/admin/dashboard' : '/user/account';
+  }
 }
 
 // Create and export singleton instance

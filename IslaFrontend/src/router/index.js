@@ -16,7 +16,6 @@ const routes = [
     component: UserLogin,
     meta: { requiresAuth: false }
   },
-  // FIXED: Consistent admin routes
   {
     path: '/admin/dashboard',
     name: 'Dashboard',
@@ -24,7 +23,7 @@ const routes = [
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
-    path: '/inventory', // Keep this as is since it's working
+    path: '/inventory',
     name: 'Inventory',
     component: () => import('../components/Admin/Inventory.vue'),
     meta: { requiresAuth: true, requiresAdmin: true }
@@ -89,7 +88,6 @@ const routes = [
     component: () => import('../components/User/FindStore.vue'),
     meta: { requiresAuth: true }
   },
-  // FIXED: Add missing routes
   {
     path: '/admin',
     redirect: '/admin/dashboard'
@@ -130,7 +128,7 @@ router.beforeEach((to, from, next) => {
     console.log('🔄 Already authenticated, redirecting based on role')
     // Redirect based on role - ADMIN or USER only
     if (userRole === 'admin') {
-      next('/inventory') // Redirect to inventory instead of dashboard
+      next('/inventory')
     } else {
       next('/user/account')
     }

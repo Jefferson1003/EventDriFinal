@@ -173,8 +173,27 @@
             </div>
           </div>
 
+          <!-- Loading State -->
+          <div v-if="loading" class="loading-state">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading user data from database...</p>
+          </div>
+
+          <!-- Auth Error State -->
+          <div v-if="authError" class="error-state">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h3>Authentication Error</h3>
+            <p>{{ authError }}</p>
+            <button @click="checkAuthentication" class="retry-btn">
+              <i class="fas fa-redo"></i> Check Again
+            </button>
+            <button @click="handleLogout" class="retry-btn" style="margin-left: 10px; background: #666;">
+              <i class="fas fa-sign-out-alt"></i> Login Again
+            </button>
+          </div>
+
           <!-- User Stats -->
-          <div class="user-stats">
+          <div v-else-if="!loading && !authError" class="user-stats">
             <div class="stat-card">
               <div class="stat-icon total">
                 <i class="fas fa-users"></i>
@@ -217,7 +236,7 @@
           </div>
 
           <!-- Search and Filters -->
-          <div class="user-controls">
+          <div v-if="!loading && !authError" class="user-controls">
             <div class="search-box">
               <i class="fas fa-search"></i>
               <input 
@@ -246,7 +265,7 @@
           </div>
 
           <!-- Users Table -->
-          <div class="users-table-container">
+          <div v-if="!loading && !authError" class="users-table-container">
             <table class="users-table">
               <thead>
                 <tr>
@@ -262,7 +281,7 @@
                 <tr v-for="user in filteredUsers" :key="user.id" :class="getUserStatusClass(user)">
                   <td class="user-cell">
                     <div class="user-info">
-                      <img :src="user.avatar" :alt="user.name" class="user-avatar">
+                      <img :src="user.avatar" :alt="user.name" class="user-avatar" @error="handleAvatarError">
                       <div class="user-details">
                         <h4>{{ user.name }}</h4>
                         <p class="user-id">ID: {{ user.id }}</p>
@@ -281,7 +300,7 @@
                         <i class="fas fa-envelope"></i>
                         {{ user.email }}
                       </div>
-                      <div class="phone" v-if="user.phone">
+                      <div class="phone" v-if="user.phone && user.phone !== 'Not provided'">
                         <i class="fas fa-phone"></i>
                         {{ user.phone }}
                       </div>
@@ -379,6 +398,16 @@
             </div>
           </div>
 
+          <!-- Error State -->
+          <div v-if="error && !authError" class="error-state">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h3>Failed to load user data</h3>
+            <p>{{ error }}</p>
+            <button @click="fetchInitialData" class="retry-btn">
+              <i class="fas fa-redo"></i> Try Again
+            </button>
+          </div>
+
           <!-- User Details Modal -->
           <div v-if="showUserDetailsModal" class="modal-overlay" @click="closeModal">
             <div class="modal user-details-modal" @click.stop>
@@ -392,7 +421,7 @@
               <div class="modal-body" v-if="selectedUser">
                 <div class="user-profile">
                   <div class="profile-header">
-                    <img :src="selectedUser.avatar" :alt="selectedUser.name" class="profile-avatar">
+                    <img :src="selectedUser.avatar" :alt="selectedUser.name" class="profile-avatar" @error="handleAvatarError">
                     <div class="profile-info">
                       <h2>{{ selectedUser.name }}</h2>
                       <p class="user-email">{{ selectedUser.email }}</p>
@@ -445,11 +474,11 @@
                           <div class="stat-label">Total Spent</div>
                         </div>
                         <div class="stat-item">
-                          <div class="stat-value">{{ selectedUser.averageOrderValue }}</div>
+                          <div class="stat-value">₱{{ selectedUser.averageOrderValue.toLocaleString() }}</div>
                           <div class="stat-label">Avg. Order Value</div>
                         </div>
                         <div class="stat-item">
-                          <div class="stat-value">{{ selectedUser.lastOrder }}</div>
+                          <div class="stat-value">{{ selectedUser.lastOrder === 'Never' ? 'Never' : formatDate(selectedUser.lastOrder) }}</div>
                           <div class="stat-label">Last Order</div>
                         </div>
                       </div>
@@ -458,11 +487,11 @@
                     <div class="detail-section">
                       <h4>Preferences</h4>
                       <div class="preferences">
-                        <div class="preference-item" v-if="selectedUser.preferences">
+                        <div class="preference-item" v-if="selectedUser.preferences && selectedUser.preferences.favoriteCategory">
                           <span class="preference-label">Favorite Category:</span>
                           <span class="preference-value">{{ selectedUser.preferences.favoriteCategory }}</span>
                         </div>
-                        <div class="preference-item" v-if="selectedUser.preferences">
+                        <div class="preference-item" v-if="selectedUser.preferences && selectedUser.preferences.dietaryRestrictions">
                           <span class="preference-label">Dietary Restrictions:</span>
                           <span class="preference-value">{{ selectedUser.preferences.dietaryRestrictions || 'None' }}</span>
                         </div>
@@ -655,10 +684,17 @@
 </template>
 
 <script>
+import axios from 'axios';
+import authService from '../../services/auth';
+
 export default {
   name: 'UserManagement',
   data() {
     return {
+      // Auth state
+      authChecked: false,
+      authError: null,
+      
       // Navbar Data
       showNotifications: false,
       showUserMenu: false,
@@ -688,7 +724,9 @@ export default {
       blockUntilDate: '',
       currentUser: this.getEmptyUser(),
       currentAdminId: '',
-      users: []
+      users: [],
+      loading: false,
+      error: null
     }
   },
   computed: {
@@ -704,7 +742,7 @@ export default {
         filtered = filtered.filter(user =>
           user.name.toLowerCase().includes(query) ||
           user.email.toLowerCase().includes(query) ||
-          (user.phone && user.phone.includes(query))
+          (user.phone && user.phone.toLowerCase().includes(query))
         );
       }
 
@@ -752,6 +790,11 @@ export default {
     }
   },
   async mounted() {
+    console.log('🚀 UserManagement mounted - starting auth check');
+    
+    // Debug current auth state
+    this.debugAuthState();
+    
     // Check for saved dark mode preference
     const savedDarkMode = localStorage.getItem('islaDarkMode');
     if (savedDarkMode) {
@@ -759,20 +802,183 @@ export default {
       this.applyDarkModeStyles();
     }
 
-    // Add Font Awesome if not already loaded
+    // Add Font Awesome
     this.loadFontAwesome();
-
-    // Add click outside listener
     document.addEventListener('click', this.handleClickOutside);
     
-    // Fetch initial data
-    await this.fetchInitialData();
+    // Check authentication
+    await this.checkAuthentication();
+    
+    if (this.authChecked && !this.authError) {
+      await this.fetchInitialData();
+    }
   },
   beforeUnmount() {
-    // Remove event listener when component is destroyed
     document.removeEventListener('click', this.handleClickOutside);
   },
   methods: {
+    // Debug method to check auth state
+    debugAuthState() {
+      console.log('🔍 AUTH DEBUG:');
+      console.log('  - authService.isAuthenticated():', authService.isAuthenticated());
+      console.log('  - authService.getUser():', authService.getUser());
+      console.log('  - authService.getToken():', authService.getToken() ? 'Present' : 'Missing');
+      
+      // Check localStorage directly
+      const token = localStorage.getItem('islaAccessToken');
+      const admin = localStorage.getItem('islaAdmin');
+      console.log('  - localStorage.islaAccessToken:', token ? `Present (${token.length} chars)` : 'Missing');
+      console.log('  - localStorage.islaAdmin:', admin ? 'Present' : 'Missing');
+      
+      if (admin) {
+        try {
+          console.log('  - Parsed admin data:', JSON.parse(admin));
+        } catch (e) {
+          console.error('  - Error parsing admin data:', e);
+        }
+      }
+    },
+
+    // Check authentication using authService
+    async checkAuthentication() {
+      console.log('🔐 Checking authentication with authService...');
+      
+      if (!authService.isAuthenticated()) {
+        this.authError = 'Not authenticated. Please login.';
+        this.authChecked = true;
+        console.error('❌ Authentication failed');
+        
+        this.showNotification('Please login to continue', 'error');
+        setTimeout(() => {
+          this.$router.push('/login');
+        }, 1500);
+        return false;
+      }
+      
+      const user = authService.getUser();
+      if (!user || user.role !== 'admin') {
+        this.authError = 'Admin access required';
+        this.authChecked = true;
+        console.error('❌ Admin access required, user role:', user?.role);
+        
+        this.showNotification('Admin access required', 'error');
+        setTimeout(() => {
+          this.$router.push(user ? '/user/account' : '/login');
+        }, 1500);
+        return false;
+      }
+      
+      // Set admin data
+      this.admin = { ...user };
+      this.currentAdminId = user.id;
+      this.authChecked = true;
+      
+      console.log('✅ Authentication successful - Admin user:', user);
+      return true;
+    },
+
+    async fetchInitialData() {
+      if (!this.authChecked) {
+        await this.checkAuthentication();
+      }
+      
+      if (this.authError) {
+        this.error = this.authError;
+        this.loading = false;
+        return;
+      }
+
+      this.loading = true;
+      this.error = null;
+      
+      try {
+        console.log('📦 Fetching users from database...');
+        await this.fetchUsers();
+        
+        this.showNotification('User data loaded successfully', 'success');
+      } catch (error) {
+        console.error('Error fetching initial data:', error);
+        this.error = this.getErrorMessage(error);
+        this.showNotification(`Failed to load data: ${this.error}`, 'error');
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async fetchUsers() {
+      // Get token using authService
+      const token = authService.getToken();
+      console.log('🔐 Fetching users with token from authService:', token ? 'Available' : 'Missing');
+
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      try {
+        let response;
+
+        // Use authService API instance (which automatically includes token)
+        console.log('Using authService API instance');
+        response = await authService.api.get('/api/admin/users');
+
+        console.log('API Response:', response);
+
+        if (response.data && response.data.success) {
+          this.users = this.formatUserData(response.data.data);
+          console.log(`✅ Successfully loaded ${this.users.length} users`);
+        } else {
+          throw new Error(response.data?.message || 'Invalid response format');
+        }
+
+      } catch (error) {
+        console.error('❌ Error in fetchUsers:', error);
+        
+        if (error.response?.status === 401) {
+          this.handleTokenExpired();
+          throw new Error('Authentication failed');
+        } else if (error.response) {
+          console.error('Response error:', error.response.status, error.response.data);
+          throw new Error(`Server error: ${error.response.status} - ${error.response.data.message || 'Unknown error'}`);
+        } else if (error.request) {
+          console.error('No response received:', error.request);
+          throw new Error('Cannot connect to server. Please check if the server is running.');
+        } else {
+          throw new Error(error.message || 'Failed to fetch users');
+        }
+      }
+    },
+
+    formatUserData(users) {
+      return users.map(user => ({
+        id: user.id,
+        name: user.name || 'No Name',
+        email: user.email,
+        phone: user.phone || 'Not provided',
+        address: user.address || 'Not provided',
+        avatar: user.avatar || '/images/default-avatar.png',
+        status: user.status || 'active',
+        orders: user.orders || user.order_count || 0,
+        totalSpent: user.total_spent || user.totalSpent || 0,
+        averageOrderValue: user.average_order_value || user.averageOrderValue || 0,
+        lastOrder: user.last_order || user.lastOrder || 'Never',
+        joinDate: user.join_date || user.created_at || new Date().toISOString(),
+        isBlocked: user.is_blocked || user.status === 'blocked' || false,
+        isNew: user.is_new || false,
+        blockedUntil: user.blocked_until || null,
+        blockReason: user.block_reason || '',
+        preferences: user.preferences || {}
+      }));
+    },
+
+    handleTokenExpired() {
+      console.log('🔐 Token expired');
+      authService.logout();
+      this.showNotification('Session expired. Please login again.', 'error');
+      setTimeout(() => {
+        this.$router.push('/login');
+      }, 2000);
+    },
+
     // Navbar Methods
     toggleNotifications() {
       this.showNotifications = !this.showNotifications
@@ -827,20 +1033,14 @@ export default {
       event.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMzAiIGZpbGw9IiNGNUY1RjUiLz4KPGNpcmNsZSBjeD0iMzAiIGN5PSIyNCIgcj0iOCIgZmlsbD0iIzg4NTkyRSIvPgo8cGF0aCBkPSJNMTggNDhDMjEuMzEzNyA0OCAyNCA0NS4zMTM3IDI0IDQyQzI0IDM4LjY4NjMgMjEuMzEzNyAzNiAxOCAzNkMxNC42ODYzIDM2IDEyIDM4LjY4NjMgMTIgNDJDMTIgNDUuMzEzNyAxNC42ODYzIDQ4IDE4IDQ4WiIgZmlsbD0iIzg4NTkyRSIvPgo8L3N2Zz4K';
     },
 
+    async refreshData() {
+      await this.fetchInitialData();
+    },
+
     // User methods
     async handleLogout() {
-      try {
-        localStorage.removeItem('islaAdmin');
-        localStorage.removeItem('islaAccessToken');
-        localStorage.removeItem('islaRefreshToken');
-        this.$router.push('/login');
-      } catch (error) {
-        console.error('Logout error:', error);
-        localStorage.removeItem('islaAdmin');
-        localStorage.removeItem('islaAccessToken');
-        localStorage.removeItem('islaRefreshToken');
-        this.$router.push('/login');
-      }
+      authService.logout();
+      this.$router.push('/login');
     },
 
     // Notification methods
@@ -867,53 +1067,38 @@ export default {
       }
     },
     
-    // Fetch initial data
-    async fetchInitialData() {
-      try {
-        // Fetch admin data
-        const adminResponse = await this.$api.get('/admin/profile');
-        this.admin = adminResponse.data;
-        this.currentAdminId = adminResponse.data.id;
-        
-        // Fetch notifications
-        const notificationsResponse = await this.$api.get('/admin/notifications');
-        this.notifications = notificationsResponse.data;
-        
-        // Fetch users
-        const usersResponse = await this.$api.get('/admin/users');
-        this.users = usersResponse.data;
-      } catch (error) {
-        console.error('Error fetching initial data:', error);
-        this.showNotification('Failed to load data', 'error');
-      }
-    },
-
     // User Management Methods
     filterUsers() {
       this.currentPage = 1;
     },
+    
     sortUsers() {
       // Sorting is handled in computed property
     },
+    
     clearFilters() {
       this.searchQuery = '';
       this.statusFilter = 'all';
       this.sortBy = 'newest';
       this.currentPage = 1;
     },
+    
     previousPage() {
       if (this.currentPage > 1) {
         this.currentPage--;
       }
     },
+    
     nextPage() {
       if (this.currentPage < this.totalPages) {
         this.currentPage++;
       }
     },
+    
     getUserStatusClass(user) {
       return `status-${user.status}`;
     },
+    
     getStatusIcon(status) {
       switch (status) {
         case 'active': return 'fas fa-check-circle';
@@ -922,28 +1107,48 @@ export default {
         default: return 'fas fa-circle';
       }
     },
+    
     formatDate(dateString) {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
+      if (!dateString || dateString === 'Never') return 'Never';
+      
+      try {
+        return new Date(dateString).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      } catch (error) {
+        return 'Invalid Date';
+      }
     },
+    
     getDaysAgo(dateString) {
-      const joinDate = new Date(dateString);
-      const today = new Date();
-      const diffTime = Math.abs(today - joinDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return `${diffDays} days ago`;
+      if (!dateString || dateString === 'Never') return 'Never';
+      
+      try {
+        const joinDate = new Date(dateString);
+        const today = new Date();
+        const diffTime = Math.abs(today - joinDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 0) return 'Today';
+        if (diffDays === 1) return '1 day ago';
+        return `${diffDays} days ago`;
+      } catch (error) {
+        return 'Invalid Date';
+      }
     },
+    
     viewUserDetails(user) {
       this.selectedUser = { ...user };
       this.showUserDetailsModal = true;
     },
+    
     editUser(user) {
       this.currentUser = { ...user };
       this.showEditUserModal = true;
     },
+    
     async blockUser(user) {
       if (user.id === this.currentAdminId) {
         this.showNotification('Cannot block your own account', 'warning');
@@ -955,6 +1160,7 @@ export default {
       this.blockUntilDate = '';
       this.showBlockModal = true;
     },
+    
     async unblockUser(user) {
       if (user.id === this.currentAdminId) {
         this.showNotification('Cannot modify your own account status', 'warning');
@@ -962,17 +1168,23 @@ export default {
       }
       
       try {
-        await this.$api.put(`/admin/users/${user.id}/unblock`);
-        user.status = 'active';
-        user.isBlocked = false;
-        user.blockedUntil = null;
-        user.blockReason = '';
-        this.showNotification(`User ${user.name} has been unblocked`, 'success');
+        const response = await authService.api.put(`/api/admin/users/${user.id}/unblock`, {});
+        
+        if (response.data.success) {
+          user.status = 'active';
+          user.isBlocked = false;
+          user.blockedUntil = null;
+          user.blockReason = '';
+          this.showNotification(`User ${user.name} has been unblocked`, 'success');
+        } else {
+          throw new Error(response.data.message);
+        }
       } catch (error) {
         console.error('Error unblocking user:', error);
         this.showNotification('Failed to unblock user', 'error');
       }
     },
+    
     async confirmBlock() {
       if (!this.blockReason.trim()) {
         this.showNotification('Please provide a reason for blocking the user', 'error');
@@ -980,16 +1192,20 @@ export default {
       }
       
       try {
-        await this.$api.put(`/admin/users/${this.userToBlock.id}/block`, {
+        const response = await authService.api.put(`/api/admin/users/${this.userToBlock.id}/block`, {
           reason: this.blockReason,
-          blockedUntil: this.blockUntilDate || null
+          blocked_until: this.blockUntilDate || null
         });
         
-        this.userToBlock.status = 'blocked';
-        this.userToBlock.isBlocked = true;
-        this.userToBlock.blockReason = this.blockReason;
-        this.userToBlock.blockedUntil = this.blockUntilDate || null;
-        this.showNotification(`User ${this.userToBlock.name} has been blocked`, 'success');
+        if (response.data.success) {
+          this.userToBlock.status = 'blocked';
+          this.userToBlock.isBlocked = true;
+          this.userToBlock.blockReason = this.blockReason;
+          this.userToBlock.blockedUntil = this.blockUntilDate || null;
+          this.showNotification(`User ${this.userToBlock.name} has been blocked`, 'success');
+        } else {
+          throw new Error(response.data.message);
+        }
       } catch (error) {
         console.error('Error blocking user:', error);
         this.showNotification('Failed to block user', 'error');
@@ -997,15 +1213,17 @@ export default {
       
       this.closeModal();
     },
+    
     async updateUser(user) {
       try {
-        await this.$api.put(`/admin/users/${user.id}`, user);
+        await authService.api.put(`/api/admin/users/${user.id}`, user);
         this.showNotification(`User ${user.name} updated successfully`, 'success');
       } catch (error) {
         console.error('Error updating user:', error);
         this.showNotification('Failed to update user', 'error');
       }
     },
+    
     confirmDelete(user) {
       if (user.id === this.currentAdminId) {
         this.showNotification('Cannot delete your own account', 'error');
@@ -1015,13 +1233,19 @@ export default {
       this.userToDelete = user;
       this.showDeleteModal = true;
     },
+    
     async deleteUser() {
       try {
-        await this.$api.delete(`/admin/users/${this.userToDelete.id}`);
-        const index = this.users.findIndex(u => u.id === this.userToDelete.id);
-        if (index > -1) {
-          this.users.splice(index, 1);
-          this.showNotification(`User ${this.userToDelete.name} deleted successfully`, 'success');
+        const response = await authService.api.delete(`/api/admin/users/${this.userToDelete.id}`);
+        
+        if (response.data.success) {
+          const index = this.users.findIndex(u => u.id === this.userToDelete.id);
+          if (index > -1) {
+            this.users.splice(index, 1);
+            this.showNotification(`User ${this.userToDelete.name} deleted successfully`, 'success');
+          }
+        } else {
+          throw new Error(response.data.message);
         }
       } catch (error) {
         console.error('Error deleting user:', error);
@@ -1030,6 +1254,7 @@ export default {
       
       this.closeModal();
     },
+    
     async saveUser() {
       try {
         if (this.showEditUserModal) {
@@ -1040,17 +1265,8 @@ export default {
             this.users[index] = { ...this.currentUser };
           }
         } else {
-          // Add new user
-          if (this.currentUser.password !== this.currentUser.confirmPassword) {
-            this.showNotification('Passwords do not match', 'error');
-            return;
-          }
-          
-          const response = await this.$api.post('/admin/users', this.currentUser);
-          const newUser = response.data;
-          
-          this.users.unshift(newUser);
-          this.showNotification(`User ${this.currentUser.name} added successfully`, 'success');
+          // For now, we'll just show a message since we don't have create user endpoint
+          this.showNotification('User creation feature coming soon', 'info');
         }
       } catch (error) {
         console.error('Error saving user:', error);
@@ -1059,9 +1275,11 @@ export default {
       
       this.closeModal();
     },
+    
     generateUserId() {
       return `user-${String(this.users.length + 1).padStart(3, '0')}`;
     },
+    
     getEmptyUser() {
       return {
         id: null,
@@ -1078,6 +1296,7 @@ export default {
         blockReason: ''
       };
     },
+    
     closeModal() {
       this.showUserDetailsModal = false;
       this.showAddUserModal = false;
@@ -1091,46 +1310,79 @@ export default {
       this.blockUntilDate = '';
       this.currentUser = this.getEmptyUser();
     },
-    exportUserData() {
-      // Simple CSV export implementation
-      const headers = ['Name', 'Email', 'Phone', 'Status', 'Orders', 'Total Spent', 'Join Date', 'Block Reason'];
-      const csvData = this.users.map(user => [
-        user.name,
-        user.email,
-        user.phone,
-        user.status,
-        user.orders,
-        user.totalSpent,
-        user.joinDate,
-        user.blockReason || ''
-      ]);
-      
-      const csvContent = [headers, ...csvData]
-        .map(row => row.map(cell => `"${cell}"`).join(','))
-        .join('\n');
-      
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'users.csv';
-      a.click();
-      window.URL.revokeObjectURL(url);
-      
-      this.showNotification('User data exported successfully', 'success');
-    },
-    async refreshData() {
+    
+    async exportUserData() {
       try {
-        await this.fetchInitialData();
-        this.showNotification('Data refreshed successfully', 'success');
+        const response = await authService.api.get('/api/admin/users/export/csv', {
+          responseType: 'blob'
+        });
+        
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `users-${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        
+        this.showNotification('User data exported successfully', 'success');
       } catch (error) {
-        console.error('Error refreshing data:', error);
-        this.showNotification('Failed to refresh data', 'error');
+        console.error('Error exporting user data:', error);
+        this.showNotification('Failed to export user data', 'error');
       }
     },
+    
+    getErrorMessage(error) {
+      if (error.response) {
+        switch (error.response.status) {
+          case 401:
+            return 'Authentication failed. Please login again.';
+          case 403:
+            return 'You do not have permission to access user data.';
+          case 404:
+            return 'API endpoint not found. Please check server configuration.';
+          case 500:
+            return 'Server error. Please try again later.';
+          default:
+            return `Server error: ${error.response.status}`;
+        }
+      } else if (error.request) {
+        return 'Cannot connect to server. Please check your internet connection and ensure the server is running.';
+      } else {
+        return error.message || 'An unexpected error occurred';
+      }
+    },
+    
     showNotification(message, type = 'info') {
-      // In a real application, you might use a toast notification library
-      alert(`${type.toUpperCase()}: ${message}`);
+      // Simple notification implementation
+      const styles = {
+        info: { background: '#88592e', color: 'white' },
+        success: { background: '#4caf50', color: 'white' },
+        error: { background: '#f44336', color: 'white' },
+        warning: { background: '#ff9800', color: 'white' }
+      };
+      
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 4px;
+        color: ${styles[type].color};
+        background: ${styles[type].background};
+        z-index: 10000;
+        font-weight: 600;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      `;
+      notification.textContent = message;
+      
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 3000);
     }
   }
 }
@@ -1639,7 +1891,7 @@ export default {
 /* Sidebar Styles */
 .admin-sidebar {
   width: 200px;
-  background: #5a3921; /* Dark brown for day mode */
+  background: #5a3921;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
   position: sticky;
@@ -1665,7 +1917,7 @@ export default {
   display: flex;
   align-items: center;
   padding: 12px 20px;
-  color: #d4b896; /* Light beige text for day mode */
+  color: #d4b896;
   text-decoration: none;
   transition: all 0.3s ease;
   font-weight: 600;
@@ -1679,7 +1931,7 @@ export default {
 }
 
 .admin-sidebar-item:hover {
-  background: #6b451e; /* Darker brown on hover for day mode */
+  background: #6b451e;
   color: #ffffff;
   border-left-color: #88592e;
 }
@@ -1690,20 +1942,20 @@ export default {
 }
 
 .admin-active-sidebar-item {
-  background: #6b451e; /* Active state for day mode */
+  background: #6b451e;
   color: #ffffff;
   border-left-color: #88592e;
 }
 
 .admin-sidebar.dark-mode .admin-active-sidebar-item {
-  background: #88592e; /* Active state for dark mode */
+  background: #88592e;
   color: #ffffff;
 }
 
 .admin-sidebar-item i {
   width: 18px;
   text-align: center;
-  color: #d4b896; /* Light beige icons for day mode */
+  color: #d4b896;
   font-size: 14px;
 }
 
@@ -1713,7 +1965,7 @@ export default {
 
 .admin-sidebar-item:hover i,
 .admin-active-sidebar-item i {
-  color: #ffffff; /* White icons on hover/active */
+  color: #ffffff;
 }
 
 /* Sidebar Logout Section */
@@ -1840,6 +2092,69 @@ export default {
 .action-btn.secondary:hover {
   background: #c4a57c;
   transform: translateY(-1px);
+}
+
+/* Loading State */
+.loading-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #88592e;
+}
+
+.loading-state i {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.loading-state p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* Error State */
+.error-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #f44336;
+  background: white;
+  border-radius: 0.8rem;
+  margin: 1rem 0;
+}
+
+.error-state i {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.error-state h3 {
+  margin-bottom: 0.5rem;
+  color: #f44336;
+}
+
+.error-state p {
+  margin-bottom: 1.5rem;
+  color: #666;
+}
+
+.retry-btn {
+  background: #f44336;
+  color: white;
+  border: none;
+  padding: 0.8rem 1.5rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 auto;
+}
+
+.retry-btn:hover {
+  background: #d32f2f;
 }
 
 .user-stats {
